@@ -15,7 +15,7 @@ import concurrent.futures
 import threading
 from queue import Queue
 
-def check_validity_thread(account_queue, table_name, db_filename, result_queue, status_queue):
+def check_validity_thread(account_queue, result_queue, status_queue):
     while not account_queue.empty():
         login, row = account_queue.get()
         try:
@@ -23,29 +23,8 @@ def check_validity_thread(account_queue, table_name, db_filename, result_queue, 
             time.sleep(random.uniform(1, 5))
             valid_status = random.choice(["Валид", "Невалид"])
 
-            # Обновление базы данных с использованием транзакции
-            with sqlite3.connect(db_filename, timeout=20, uri=True) as conn:
-                conn.execute('PRAGMA cache_size = 100000')
-                conn.execute('PRAGMA temp_store = MEMORY')
-                conn.execute('PRAGMA journal_mode = WAL')
-                conn.execute('PRAGMA synchronous = NORMAL')              
-                cursor = conn.cursor()
-                cursor.execute("BEGIN TRANSACTION")
-                try:
-                    query = f"UPDATE {table_name} SET status = ? WHERE login = ?"
-                    cursor.execute(query, (valid_status, login))
-                    conn.commit()
-                except sqlite3.OperationalError as e:
-                    print(str(e))
-                    conn.rollback()
-                    if "database is locked" in str(e):
-                        time.sleep(1)
-                    else:
-                        raise
-            
             result_queue.put((login, valid_status, row))
             status_queue.put((row, valid_status))
-            #print(f"Account {login} status updated to {valid_status}")
         except Exception as e:
             print(f"Error in thread for login {login}: {e}")
         finally:
@@ -58,7 +37,7 @@ def process_function(account_list, table_name, db_filename, result_queue, status
 
     threads = []
     for _ in range(100):  # 100 потоков
-        thread = threading.Thread(target=check_validity_thread, args=(account_queue, table_name, db_filename, result_queue, status_queue))
+        thread = threading.Thread(target=check_validity_thread, args=(account_queue, result_queue, status_queue))
         threads.append(thread)
         thread.start()
 
@@ -391,7 +370,6 @@ class MainWindow(QMainWindow):
         if total_accounts == 0:
             return
 
-        # Разделение на процессы
         process_count = min(100, (total_accounts + 199) // 200)
         accounts_per_process = (total_accounts + process_count - 1) // process_count
 
@@ -408,31 +386,42 @@ class MainWindow(QMainWindow):
             processes.append(p)
             p.start()
 
-        self.monitor_validity_processes(processes, result_queue, status_queue, table, selected_rows)
+        self.monitor_validity_processes(processes, result_queue, status_queue, table)
         print("Проверка валидности аккаунтов запущена")
-
-    def monitor_validity_processes(self, processes, result_queue, status_queue, table, selected_rows):
+    def monitor_validity_processes(processes, result_queue, status_queue, table):
         def check_results():
+            conn = sqlite3.connect('total.db')
+            cursor = conn.cursor()
+            updates = []
             while not result_queue.empty():
                 login, valid_status, row = result_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(valid_status))
                 self.set_row_color(table, row)
+                updates.append((valid_status, login))
+
+            if updates:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    cursor.executemany("UPDATE accounts SET status = ? WHERE login = ?", updates)
+                    conn.commit()
+                except sqlite3.OperationalError as e:
+                    print(str(e))
+                    conn.rollback()
+            conn.close()
             
             while not status_queue.empty():
                 row, status = status_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(status))
                 self.set_row_color(table, row)
-                #print(f"Account {table.item(row, 0).text()} status set to '{status}'")
-            
+
             for p in processes:
                 if p.is_alive():
                     QTimer.singleShot(100, check_results)
                     return
-            
+
             print("Проверка валидности аккаунтов завершена")
-        
+
         QTimer.singleShot(100, check_results)
-    
     def parse_audience(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         
