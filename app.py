@@ -12,7 +12,31 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
 import concurrent.futures
+def check_validity_task(login_list, row_list, table_name, db_filename, result_queue, status_queue):
+    def check_validity_thread(login, row):
+        # Симуляция проверки валидности
+        time.sleep(random.uniform(1, 5))
+        valid_status = random.choice(["Валид", "Невалид"])
 
+        # Обновление базы данных
+        conn = sqlite3.connect(db_filename)
+        cursor = conn.cursor()
+        query = f"UPDATE {table_name} SET status = ? WHERE login = ?"
+        cursor.execute(query, (valid_status, login))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        result_queue.put((login, valid_status, row))
+        status_queue.put((row, valid_status))
+        print(f"Account {login} status updated to {valid_status}")
+
+    print(f"Process started for checking validity of accounts: {login_list}")
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(check_validity_thread, login_list, row_list)
+    print(f"Process finished for checking validity of accounts: {login_list}")
+    
+    
 def audience_task(login_list, row_list, table_name, group_name, db_filename, result_queue, status_queue):
     def audience_thread(login, row):
         conn = sqlite3.connect(db_filename)
@@ -328,20 +352,66 @@ class MainWindow(QMainWindow):
                     self.send_messages(current_table, selected_items)
 
     def check_validity(self, table, items):
-        selected_rows = set(item.row() for item in items)
-        for row in selected_rows:
-            status_item = table.item(row, 4)
-            if status_item and status_item.text() == "В работе":
-                continue  # Пропустить аккаунты, которые уже в работе
-            valid_status = random.randint(1, 2)
-            status = "Валид" if valid_status == 1 else "Невалид"
-            table.setItem(row, 4, QTableWidgetItem(status))
-            self.set_row_color(table, row)
-            query = f"UPDATE {self.tab_widget.tabText(self.tab_widget.indexOf(table))} SET status = ? WHERE login = ?"
-            self.cursor.execute(query, (status, table.item(row, 0).text()))
-            self.conn.commit()
-        print("Проверка валидности выполнена")
+        table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
+        selected_rows = list(set(item.row() for item in items))
+        total_accounts = len(selected_rows)
+        processes = []
+        result_queue = multiprocessing.Queue()
+        status_queue = multiprocessing.Queue()
 
+        if total_accounts == 0:
+            return
+
+        # Разделение на процессы
+        process_count = min(10, (total_accounts + 99) // 100)
+        accounts_per_process = (total_accounts + process_count - 1) // process_count
+
+        print(f"Starting {process_count} processes with {accounts_per_process} accounts each.")
+
+        for i in range(0, total_accounts, accounts_per_process):
+            chunk = selected_rows[i:i + accounts_per_process]
+            login_list = [table.item(row, 0).text() for row in chunk]
+            row_list = chunk
+            for row in chunk:
+                table.setItem(row, 4, QTableWidgetItem("В работе"))
+                self.set_row_color(table, row, Qt.yellow)
+                print(f"Account {table.item(row, 0).text()} status set to 'В работе'")
+            p = multiprocessing.Process(target=check_validity_task, args=(login_list, row_list, table_name, self.db_filename, result_queue, status_queue))
+            processes.append(p)
+            p.start()
+
+        self.monitor_validity_processes(processes, result_queue, status_queue, table, selected_rows)
+        print("Проверка валидности аккаунтов запущена")
+
+    def monitor_validity_processes(self, processes, result_queue, status_queue, table, selected_rows):
+        def check_results():
+            while not result_queue.empty():
+                login, valid_status, row = result_queue.get()
+                table.setItem(row, 4, QTableWidgetItem(valid_status))
+                self.set_row_color(table, row)
+            
+            while not status_queue.empty():
+                row, status = status_queue.get()
+                table.setItem(row, 4, QTableWidgetItem(status))
+                self.set_row_color(table, row, Qt.lightGray if status == "Завершен" else Qt.yellow)
+                print(f"Account {table.item(row, 0).text()} status set to '{status}'")
+            
+            for p in processes:
+                if p.is_alive():
+                    QTimer.singleShot(100, check_results)
+                    return
+            
+            # Обновить статус и цвет аккаунтов после завершения всех процессов
+            for row in selected_rows:
+                if table.item(row, 4).text() != "Завершен":
+                    table.setItem(row, 4, QTableWidgetItem("Завершен"))
+                    self.set_row_color(table, row, Qt.lightGray)
+                    print(f"Account {table.item(row, 0).text()} status set to 'Завершен'")
+            print("Проверка валидности аккаунтов завершена")
+        
+        QTimer.singleShot(100, check_results) 
+    
+    
     def parse_audience(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         
