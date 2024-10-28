@@ -201,9 +201,13 @@ class MainWindow(QMainWindow):
                     if 'audience' in table_name:
                         self.available_tables.append(table_name)
                         self.update_parsed_audience_table(table_name)
-                    else:    
+                    else:
                         self.available_tables.append(table_name)
-                        self.update_account_table(table_name)                
+                        # Initialize account_table if not already done
+                        if not hasattr(self, 'account_table'):
+                            self.account_table = QTableWidget()
+                            self.setup_account_table(self.account_table)
+                        self.update_account_table(table_name)
         except Exception as e:
             print(f"Ошибка при загрузке таблиц из базы данных: {e}")
 
@@ -265,7 +269,7 @@ class MainWindow(QMainWindow):
         try:
             self.conn = sqlite3.connect(self.db_file)
         except sqlite3.Error as e:
-            logging.error(f"Database connection error: {e}")
+            print(f"Database connection error: {e}")
 
     def create_table(self, table_name: str):
         """
@@ -372,7 +376,7 @@ class MainWindow(QMainWindow):
             c.execute("INSERT INTO parsed_audience (audience_id) VALUES (?)", (audience_id,))
             self.conn.commit()
         except sqlite3.Error as e:
-            logging.error(f"Error adding audience ID: {e}")
+            print(f"Error adding audience ID: {e}")
 
     def get_unused_audience_ids(self):
         try:
@@ -380,7 +384,7 @@ class MainWindow(QMainWindow):
             c.execute("SELECT audience_id FROM parsed_audience WHERE used = 0")
             return [row[0] for row in c.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Error retrieving audience IDs: {e}")
+            print(f"Error retrieving audience IDs: {e}")
             return []
 
     def mark_audience_id_as_used(self, audience_id):
@@ -389,7 +393,7 @@ class MainWindow(QMainWindow):
             c.execute("UPDATE parsed_audience SET used = 1 WHERE audience_id = ?", (audience_id,))
             self.conn.commit()
         except sqlite3.Error as e:
-            logging.error(f"Error marking audience ID as used: {e}")
+            print(f"Error marking audience ID as used: {e}")
 
     # UI functions
 
@@ -421,13 +425,48 @@ class MainWindow(QMainWindow):
         except sqlite3.Error as e:
             print(f"Ошибка при обновлении счетчика сообщений: {e}")
 
+
     def update_account_table(self, table_name):
-        self.account_table.update_table(table_name)
-        self.account_table.repaint()
+        try:
+            accounts = self.get_accounts(table_name)
+            self.account_table.setRowCount(0)  # Очистка таблицы
+            for account in accounts:
+                row_position = self.account_table.rowCount()
+                self.account_table.insertRow(row_position)
+                self.account_table.setItem(row_position, 0, QTableWidgetItem(account['username']))
+                self.account_table.setItem(row_position, 1, QTableWidgetItem(account['password']))
+                self.account_table.setItem(row_position, 2, QTableWidgetItem(account['ua']))
+                self.account_table.setItem(row_position, 3, QTableWidgetItem(account['cookie']))
+                self.account_table.setItem(row_position, 4, QTableWidgetItem(account['device']))
+                self.account_table.setItem(row_position, 5, QTableWidgetItem(account['status_account']))
+                self.account_table.setItem(row_position, 6, QTableWidgetItem(str(account['messages_total'])))
+                self.account_table.setItem(row_position, 7, QTableWidgetItem(str(account['messages_day'])))
+                self.account_table.setItem(row_position, 8, QTableWidgetItem(str(account['messages_run'])))
+                self.account_table.setItem(row_position, 9, QTableWidgetItem(account['color']))
+            self.account_table.repaint()
+        except Exception as e:
+            print(f"Ошибка при обновлении таблицы аккаунтов: {e}")
 
     def update_parsed_audience_table(self, table_name):
-        self.audience_table.update_table(table_name)
-        self.audience_table.repaint()
+        try:
+            # Получить данные аудитории из базы данных
+            c = self.conn.cursor()
+            c.execute(f"SELECT * FROM '{table_name}'")
+            rows = c.fetchall()
+            
+            self.audience_table.setRowCount(0)  # Очистка таблицы
+            for row in rows:
+                row_position = self.audience_table.rowCount()
+                self.audience_table.insertRow(row_position)
+                self.audience_table.setItem(row_position, 0, QTableWidgetItem(row['audience_name']))
+                self.audience_table.setItem(row_position, 1, QTableWidgetItem(str(row['total_audience_count'])))
+                self.audience_table.setItem(row_position, 2, QTableWidgetItem(str(row['processed_audience_count'])))
+                self.audience_table.setItem(row_position, 3, QTableWidgetItem(row['audience_date']))
+            self.audience_table.repaint()
+        except Exception as e:
+            print(f"Ошибка при обновлении таблицы аудитории: {e}")
+
+
 
     # Task functions
 
