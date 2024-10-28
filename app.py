@@ -20,7 +20,7 @@ def check_validity_thread(account_queue, result_queue, status_queue):
         login, row = account_queue.get()
         try:
             # Симуляция проверки валидности
-            time.sleep(random.uniform(1, 5))
+            time.sleep(random.uniform(1, 10))
             valid_status = random.choice(["Валид", "Невалид"])
 
             result_queue.put((login, valid_status, row))
@@ -36,14 +36,13 @@ def process_function(account_list, table_name, db_filename, result_queue, status
         account_queue.put(account)
 
     threads = []
-    for _ in range(100):  # 100 потоков
+    for _ in range(30):  # 100 потоков
         thread = threading.Thread(target=check_validity_thread, args=(account_queue, result_queue, status_queue))
         threads.append(thread)
         thread.start()
 
     for thread in threads:
         thread.join()
-
 
 def audience_task(login_list, row_list, table_name, group_name, db_filename, result_queue, status_queue):
     def audience_thread(login, row):
@@ -386,9 +385,10 @@ class MainWindow(QMainWindow):
             processes.append(p)
             p.start()
 
-        self.monitor_validity_processes(processes, result_queue, status_queue, table)
+        self.monitor_validity_processes(processes, result_queue, status_queue, table_name, table)
         print("Проверка валидности аккаунтов запущена")
-    def monitor_validity_processes(processes, result_queue, status_queue, table):
+
+    def monitor_validity_processes(self, processes, result_queue, status_queue, table_name, table):
         def check_results():
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
@@ -402,7 +402,7 @@ class MainWindow(QMainWindow):
             if updates:
                 cursor.execute("BEGIN TRANSACTION")
                 try:
-                    cursor.executemany("UPDATE accounts SET status = ? WHERE login = ?", updates)
+                    cursor.executemany(f"UPDATE {table_name} SET status = ? WHERE login = ?", updates)
                     conn.commit()
                 except sqlite3.OperationalError as e:
                     print(str(e))
@@ -422,6 +422,7 @@ class MainWindow(QMainWindow):
             print("Проверка валидности аккаунтов завершена")
 
         QTimer.singleShot(100, check_results)
+    
     def parse_audience(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         
