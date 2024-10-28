@@ -76,8 +76,8 @@ class MainWindow(QMainWindow):
         self.load_settings()
 
         # Инициализация account_table (важно!)
-        self.account_table = QTableWidget()
-        self.setup_account_table(self.account_table)
+        #self.account_table = QTableWidget()
+        #self.setup_account_table(self.account_table)
 
     def start_task_with_group_name(self):
         audience_name, ok = QInputDialog.getText(self, "Название группы", "Введите название группы:")
@@ -133,11 +133,14 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Ошибка", "Введите имя таблицы.")
         else:
             print("Создание таблицы отменено.")
-
     def load_accounts(self):
         """
         Загружает аккаунты из файла.
         """
+        if not self.current_table:
+            QMessageBox.warning(self, "Ошибка", "Текущая таблица не задана.")
+            return
+
         file_path, ok = QFileDialog.getOpenFileName(self, "Загрузить аккаунты", "", "All Files (*)")
         if ok:
             if file_path:
@@ -155,22 +158,28 @@ class MainWindow(QMainWindow):
         else:
             print("Загрузка аккаунтов отменена.")
 
+
     def show_settings(self):
         """
         Отображает окно настроек.
         """
-        settings_window = SettingsWindow(self.settings)
-        settings_window.show()
+        self.settings_window = SettingsWindow(self.settings)
+        self.settings_window.show()
 
     def fill_table_with_data(self):
         """
         Заполняет таблицу сгенерированными данными.
         """
         print("Кнопка 'Заполнить таблицу' нажата")
+        
+        current_widget = self.tab_widget.currentWidget()
+        if not hasattr(current_widget, 'table_name'):
+            QMessageBox.warning(self, "Ошибка", "Текущий виджет не содержит таблицы.")
+            return
 
-        self.current_table = self.tab_widget.currentWidget().table_name
+        self.current_table = current_widget.table_name
 
-        if self.tab_widget.currentWidget().rowCount() > 0:
+        if current_widget.rowCount() > 0:
             reply = QMessageBox.question(self, "Предупреждение", "Таблица уже содержит данные. Вы уверены, что хотите заполнить ее заново?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.No:
                 return
@@ -185,6 +194,7 @@ class MainWindow(QMainWindow):
                 'device': f'device_{random.randint(1, 1000)}'
             })
         self.update_account_table(self.current_table)
+
 
     def load_tables_from_database(self):
         """
@@ -268,9 +278,10 @@ class MainWindow(QMainWindow):
     def connect_to_db(self):
         try:
             self.conn = sqlite3.connect(self.db_file)
+            print("Database connection successful.")
         except sqlite3.Error as e:
+            self.conn = None
             print(f"Database connection error: {e}")
-
     def create_table(self, table_name: str):
         """
         Создает таблицу в базе данных.
