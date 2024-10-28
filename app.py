@@ -13,54 +13,59 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
 import concurrent.futures
 import threading
-def check_validity_task(login_list, row_list, table_name, db_filename, result_queue, status_queue):
-    start_event = threading.Event()
+from queue import Queue
 
-    def check_validity_thread(login, row):
-        # Дождаться установки события для одновременного старта
-        start_event.wait()
+def check_validity_thread(account_queue, table_name, db_filename, result_queue, status_queue):
+    while not account_queue.empty():
+        login, row = account_queue.get()
         try:
             # Симуляция проверки валидности
             time.sleep(random.uniform(1, 5))
             valid_status = random.choice(["Валид", "Невалид"])
 
-            # Обновление базы данных
-            for attempt in range(25):  # Попробовать до 5 раз
+            # Обновление базы данных с использованием транзакции
+            with sqlite3.connect(db_filename, timeout=20, uri=True) as conn:
+                conn.execute('PRAGMA cache_size = 100000')
+                conn.execute('PRAGMA temp_store = MEMORY')
+                conn.execute('PRAGMA journal_mode = WAL')
+                conn.execute('PRAGMA synchronous = NORMAL')              
+                cursor = conn.cursor()
+                cursor.execute("BEGIN TRANSACTION")
                 try:
-                    conn = sqlite3.connect(db_filename)
-                    cursor = conn.cursor()
                     query = f"UPDATE {table_name} SET status = ? WHERE login = ?"
                     cursor.execute(query, (valid_status, login))
                     conn.commit()
-                    cursor.close()
-                    conn.close()
-                    break  # Выйти из цикла, если успешно
                 except sqlite3.OperationalError as e:
+                    print(str(e))
+                    conn.rollback()
                     if "database is locked" in str(e):
-                        time.sleep(1)  # Подождать 1 секунду и попробовать снова
+                        time.sleep(1)
                     else:
-                        print(str(e))
-                        raise  # Перевыбросить исключение, если это не ошибка блокировки
-
+                        raise
+            
             result_queue.put((login, valid_status, row))
             status_queue.put((row, valid_status))
-            print(f"Account {login} status updated to {valid_status}")
+            #print(f"Account {login} status updated to {valid_status}")
         except Exception as e:
             print(f"Error in thread for login {login}: {e}")
+        finally:
+            account_queue.task_done()
 
-    print(f"Process started for checking validity of accounts: {login_list}")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
-        futures = [executor.submit(check_validity_thread, login, row) for login, row in zip(login_list, row_list)]
-        
-        # Установить событие для старта всех потоков
-        start_event.set()
-        
-        # Ожидание завершения всех потоков
-        concurrent.futures.wait(futures)
+def process_function(account_list, table_name, db_filename, result_queue, status_queue):
+    account_queue = Queue()
+    for account in account_list:
+        account_queue.put(account)
 
-    print(f"Process finished for checking validity of accounts: {login_list}")
-    
-    
+    threads = []
+    for _ in range(100):  # 100 потоков
+        thread = threading.Thread(target=check_validity_thread, args=(account_queue, table_name, db_filename, result_queue, status_queue))
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+
 def audience_task(login_list, row_list, table_name, group_name, db_filename, result_queue, status_queue):
     def audience_thread(login, row):
         conn = sqlite3.connect(db_filename)
@@ -387,7 +392,7 @@ class MainWindow(QMainWindow):
             return
 
         # Разделение на процессы
-        process_count = min(100, (total_accounts + 99) // 100)
+        process_count = min(100, (total_accounts + 199) // 200)
         accounts_per_process = (total_accounts + process_count - 1) // process_count
 
         print(f"Starting {process_count} processes with {accounts_per_process} accounts each.")
@@ -399,8 +404,7 @@ class MainWindow(QMainWindow):
             for row in chunk:
                 table.setItem(row, 4, QTableWidgetItem("В работе"))
                 self.set_row_color(table, row, Qt.yellow)
-                #print(f"Account {table.item(row, 0).text()} status set to 'В работе'")
-            p = multiprocessing.Process(target=check_validity_task, args=(login_list, row_list, table_name, self.db_filename, result_queue, status_queue))
+            p = multiprocessing.Process(target=process_function, args=(list(zip(login_list, row_list)), table_name, self.db_filename, result_queue, status_queue))
             processes.append(p)
             p.start()
 
@@ -418,7 +422,7 @@ class MainWindow(QMainWindow):
                 row, status = status_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(status))
                 self.set_row_color(table, row)
-                print(f"Account {table.item(row, 0).text()} status set to '{status}'")
+                #print(f"Account {table.item(row, 0).text()} status set to '{status}'")
             
             for p in processes:
                 if p.is_alive():
@@ -428,8 +432,6 @@ class MainWindow(QMainWindow):
             print("Проверка валидности аккаунтов завершена")
         
         QTimer.singleShot(100, check_results)
-        
-    
     
     def parse_audience(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
