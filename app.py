@@ -19,7 +19,6 @@ from PyQt5.QtWidgets import QLabel, QVBoxLayout, QPushButton, QWidget
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from functools import partial
 
-
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
 
@@ -31,21 +30,26 @@ class TaskMonitorWidget(QWidget):
         self.invalid_count = 0
         self.start_time = time.time()
         self.setup_ui()
+        
+        # Initialize and start a QTimer for updating time
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_time)
+        self.timer.start(1000)  # Update every second
 
     def setup_ui(self):
         layout = QVBoxLayout()
         
-        self.task_label = QLabel(f"Task: {self.task_name}")
-        self.status_label = QLabel("Status: In Progress")
-        self.accounts_label = QLabel(f"Total Accounts: {self.total_accounts}")
-        self.valid_label = QLabel(f"Valid: {self.valid_count}")
-        self.invalid_label = QLabel(f"Invalid: {self.invalid_count}")
-        self.time_label = QLabel("Time: 0s")
+        self.task_label = QLabel(f"Задача: {self.task_name}")
+        self.status_label = QLabel("Статус: В процессе")
+        self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
+        self.valid_label = QLabel(f"Валидные: {self.valid_count}")
+        self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
+        self.time_label = QLabel("Время: 0с")
         
-        self.stop_button = QPushButton("Stop")
+        self.stop_button = QPushButton("Остановить")
         self.stop_button.clicked.connect(self.stop_task)
         
-        self.close_button = QPushButton("Close")
+        self.close_button = QPushButton("Закрыть")
         self.close_button.clicked.connect(self.close_task)
         self.close_button.setVisible(False)
         
@@ -69,11 +73,11 @@ class TaskMonitorWidget(QWidget):
     def update_status(self, valid_count, invalid_count, status):
         self.valid_count += valid_count  # Increment the count instead of setting it
         self.invalid_count += invalid_count  # Increment the count instead of setting it
-        self.valid_label.setText(f"Valid: {self.valid_count}")
-        self.invalid_label.setText(f"Invalid: {self.invalid_count}")
-        self.status_label.setText(f"Status: {status}")
+        self.valid_label.setText(f"Валидные: {self.valid_count}")
+        self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
+        self.status_label.setText(f"Статус: {status}")
         
-        if status in ["Completed", "Stopped"]:
+        if status in ["Завершен", "Остановлен"]:
             self.stop_button.setVisible(False)
             self.close_button.setVisible(True)
             self.timer.stop()
@@ -83,7 +87,6 @@ class TaskMonitorWidget(QWidget):
 
     def close_task(self):
         self.close()
-
 
 def check_validity_thread(account_queue, result_queue, status_queue):
     while not account_queue.empty():
@@ -529,7 +532,7 @@ class MainWindow(QMainWindow):
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
 
-            task_widget.update_status(valid_count, invalid_count, "Завершена")
+            task_widget.update_status(valid_count, invalid_count, "Завершен")
 
             print("Проверка валидности аккаунтов завершена")
 
