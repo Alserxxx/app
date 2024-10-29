@@ -369,7 +369,7 @@ class MainWindow(QMainWindow):
         if total_accounts == 0:
             return
 
-        process_count = min(100, (total_accounts + 199) // 200)
+        process_count = min(10, (total_accounts + 99) // 100)
         accounts_per_process = (total_accounts + process_count - 1) // process_count
 
         print(f"Starting {process_count} processes with {accounts_per_process} accounts each.")
@@ -387,28 +387,34 @@ class MainWindow(QMainWindow):
 
         self.monitor_validity_processes(processes, result_queue, status_queue, table_name, table)
         print("Проверка валидности аккаунтов запущена")
-
     def monitor_validity_processes(self, processes, result_queue, status_queue, table_name, table):
         def check_results():
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             updates = []
+            table_updates = []
+
             while not result_queue.empty():
                 login, valid_status, row = result_queue.get()
-                table.setItem(row, 4, QTableWidgetItem(valid_status))
-                self.set_row_color(table, row)
                 updates.append((valid_status, login))
+                table_updates.append((row, valid_status))
 
             if updates:
                 cursor.execute("BEGIN TRANSACTION")
                 try:
-                    cursor.executemany(f"UPDATE {table_name} SET status = ? WHERE login = ?", updates)
+                    query = f"UPDATE {table_name} SET status = ? WHERE login = ?"
+                    cursor.executemany(query, updates)
                     conn.commit()
                 except sqlite3.OperationalError as e:
                     print(str(e))
                     conn.rollback()
             conn.close()
-            
+
+            # Apply updates to the table in batches
+            for row, valid_status in table_updates:
+                table.setItem(row, 4, QTableWidgetItem(valid_status))
+                self.set_row_color(table, row)
+
             while not status_queue.empty():
                 row, status = status_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(status))
@@ -422,6 +428,9 @@ class MainWindow(QMainWindow):
             print("Проверка валидности аккаунтов завершена")
 
         QTimer.singleShot(100, check_results)
+
+
+
     
     def parse_audience(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
