@@ -7,7 +7,7 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog
+    QFileDialog, QInputDialog,QSizePolicy
 )
 from PyQt5.QtGui import QColor
 
@@ -41,59 +41,51 @@ class TaskMonitorWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout()
         
-        # Define your custom styles
-        label_style = """
-        background-color: #e0f7fa;  # Light cyan background
-        border: 1px solid #00796b;  # Teal border
-        padding: 5px;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        color: #004d40;  # Dark teal text
+        
+        layout_style = """
+        border: 5px solid #00796b;
+        max-height: 250px;
         """
         
+        
+        label_style = """
+        background: #F2FCFD;
+        border: 1px solid #00796b;
+        padding: 5px;
+        color: #004d40;
+        """
+
         button_style = """
-        background-color: #00796b;  # Teal background
-        border: none;
+        background: green;
+        border: 1px solid;
         padding: 8px 16px;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        color: white;
+        color: black;
         border-radius: 4px;
         """
-        
+
         button_hover_style = """
         QPushButton:hover {
-            background-color: #004d40;  # Darker teal on hover
+            background: red;
         }
         QPushButton:disabled {
-            background-color: #b2dfdb;  # Light teal when disabled
+            background: blue;
         }
         """
+
+        container_widget = QWidget()
+        container_widget.setLayout(layout)
         
         self.task_label = QLabel(f"Задача: {self.task_name}")
-        self.task_label.setStyleSheet(label_style)
-        
         self.status_label = QLabel("Статус: В процессе")
-        self.status_label.setStyleSheet(label_style)
-
-        self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
-        self.accounts_label.setStyleSheet(label_style)
-        
-        self.valid_label = QLabel(f"Валидные: {self.valid_count}")
-        self.valid_label.setStyleSheet(label_style)
-        
-        self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
-        self.invalid_label.setStyleSheet(label_style)
-        
+        self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")   
+        self.valid_label = QLabel(f"Валидные: {self.valid_count}") 
+        self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}") 
         self.time_label = QLabel("Время: 0с")
-        self.time_label.setStyleSheet(label_style)
         
         self.stop_button = QPushButton("Остановить")
-        self.stop_button.setStyleSheet(button_style + button_hover_style)
         self.stop_button.clicked.connect(self.stop_task)
         
         self.close_button = QPushButton("Закрыть")
-        self.close_button.setStyleSheet(button_style + button_hover_style)
         self.close_button.clicked.connect(self.close_task)
         self.close_button.setVisible(False)
         
@@ -106,8 +98,28 @@ class TaskMonitorWidget(QWidget):
         layout.addWidget(self.stop_button)
         layout.addWidget(self.close_button)
         
-        layout.addStretch()  # Add stretch to prevent full height stretching
-        self.setLayout(layout)
+        
+        #self.layout.setStyleSheet(layout_style)
+        self.task_label.setStyleSheet(label_style)
+        self.status_label.setStyleSheet(label_style)
+        self.accounts_label.setStyleSheet(label_style)
+        self.valid_label.setStyleSheet(label_style)
+        self.invalid_label.setStyleSheet(label_style)
+        self.time_label.setStyleSheet(label_style)
+        self.stop_button.setStyleSheet(button_style)
+        self.close_button.setStyleSheet(button_style)
+        container_widget.setStyleSheet(layout_style) # Setting style for the container widget
+        #layout.addStretch()  # Add stretch to prevent full height stretching
+        main_layout = QVBoxLayout(self)
+        container_widget.adjustSize()
+        container_widget.setAlignment(Qt.AlignTop)
+
+        container_widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+        #container_widget.setFixedSize(container_widget.sizeHint())
+
+        main_layout.addWidget(container_widget)
+        container_widget.adjustSize()
+        #self.setLayout(layout)
 
     def update_time(self):
         elapsed_time = int(time.time() - self.start_time)
