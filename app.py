@@ -14,6 +14,74 @@ from PyQt5.QtCore import Qt
 import concurrent.futures
 import threading
 from queue import Queue
+from PyQt5.QtCore import pyqtSignal
+
+class TaskMonitorWidget(QWidget):
+    stop_task_signal = pyqtSignal(str)
+
+    def __init__(self, task_name, total_accounts):
+        super().__init__()
+        self.task_name = task_name
+        self.total_accounts = total_accounts
+        self.valid_count = 0
+        self.invalid_count = 0
+        self.start_time = time.time()
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+
+        self.task_label = QLabel(f"Task: {self.task_name}")
+        self.status_label = QLabel("Status: In Progress")
+        self.accounts_label = QLabel(f"Total Accounts: {self.total_accounts}")
+        self.valid_label = QLabel(f"Valid: {self.valid_count}")
+        self.invalid_label = QLabel(f"Invalid: {self.invalid_count}")
+        self.time_label = QLabel("Time: 0s")
+
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.clicked.connect(self.stop_task)
+
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close_task)
+        self.close_button.setVisible(False)
+
+        layout.addWidget(self.task_label)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.accounts_label)
+        layout.addWidget(self.valid_label)
+        layout.addWidget(self.invalid_label)
+        layout.addWidget(self.time_label)
+        layout.addWidget(self.stop_button)
+        layout.addWidget(self.close_button)
+
+        self.setLayout(layout)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_time)
+        self.timer.start(1000)  # Update every second
+
+    def update_time(self):
+        elapsed_time = int(time.time() - self.start_time)
+        self.time_label.setText(f"Time: {elapsed_time}s")
+
+    def update_status(self, valid_count, invalid_count, status):
+        self.valid_count = valid_count
+        self.invalid_count = invalid_count
+        self.valid_label.setText(f"Valid: {self.valid_count}")
+        self.invalid_label.setText(f"Invalid: {self.invalid_count}")
+        self.status_label.setText(f"Status: {status}")
+
+        if status in ["Completed", "Stopped"]:
+            self.stop_button.setVisible(False)
+            self.close_button.setVisible(True)
+            self.timer.stop()
+
+    def stop_task(self):
+        self.stop_task_signal.emit(self.task_name)
+
+    def close_task(self):
+        self.close()
+
 
 def check_validity_thread(account_queue, result_queue, status_queue):
     while not account_queue.empty():
@@ -72,7 +140,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-
+        self.tasks = {}
         self.setWindowTitle("Управление аккаунтами")  # Заголовок окна
         self.setGeometry(100, 100, 1200, 800)  # Размеры окна
         
@@ -132,7 +200,11 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.audience_table)
         self.splitter.setSizes([800, 200])  # 80% ширины - таблица аккаунтов, 20% ширины - таблица аудитории
         self.main_layout.addWidget(self.splitter)
-
+       
+        self.stats_layout = QVBoxLayout()
+        self.stats_container = QWidget()
+        self.stats_container.setLayout(self.stats_layout)
+        self.splitter.addWidget(self.stats_container)
         # Виджет для основного окна
         container = QWidget()
         container.setLayout(self.main_layout)
@@ -358,6 +430,11 @@ class MainWindow(QMainWindow):
                 elif selected_task == "Рассылка сообщений":
                     self.send_messages(current_table, selected_items)
 
+
+
+
+
+
     def check_validity(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         selected_rows = list(set(item.row() for item in items))
@@ -368,7 +445,13 @@ class MainWindow(QMainWindow):
 
         if total_accounts == 0:
             return
-
+        task_name = f"Validation Check ({table_name})"
+        task_widget = TaskMonitorWidget(task_name, total_accounts)
+        task_widget.stop_task_signal.connect(lambda: self.stop_task(task_name))
+        self.stats_layout.addWidget(task_widget)
+        self.tasks[task_name] = task_widget
+        
+        
         process_count = min(10, (total_accounts + 99) // 100)
         accounts_per_process = (total_accounts + process_count - 1) // process_count
 
@@ -387,18 +470,32 @@ class MainWindow(QMainWindow):
 
         self.monitor_validity_processes(processes, result_queue, status_queue, table_name, table)
         print("Проверка валидности аккаунтов запущена")
+        
+        
+        
+        
+
+    def stop_task(self, task_name):
+            # Logic to stop the task
+            task_widget = self.tasks[task_name]
+            task_widget.update_status(task_widget.valid_count, task_widget.invalid_count, "Stopped")
+        
     def monitor_validity_processes(self, processes, result_queue, status_queue, table_name, table):
         def check_results():
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             updates = []
             table_updates = []
-
+            valid_count = 0
+            invalid_count = 0
             while not result_queue.empty():
                 login, valid_status, row = result_queue.get()
                 updates.append((valid_status, login))
                 table_updates.append((row, valid_status))
-
+                if valid_status == "Валид":
+                    valid_count += 1
+                else:
+                    invalid_count += 1
             if updates:
                 cursor.execute("BEGIN TRANSACTION")
                 try:
@@ -419,11 +516,14 @@ class MainWindow(QMainWindow):
                 row, status = status_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(status))
                 self.set_row_color(table, row)
+            task_widget = self.tasks[task_name]
+            task_widget.update_status(valid_count, invalid_count, "In Progress")
 
             for p in processes:
                 if p.is_alive():
                     QTimer.singleShot(100, check_results)
                     return
+            task_widget.update_status(valid_count, invalid_count, "Completed")
 
             print("Проверка валидности аккаунтов завершена")
 
