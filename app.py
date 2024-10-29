@@ -15,6 +15,10 @@ import concurrent.futures
 import threading
 from queue import Queue
 from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QLabel, QVBoxLayout, QPushButton, QWidget
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from functools import partial
+
 
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
@@ -480,8 +484,9 @@ class MainWindow(QMainWindow):
             task_widget = self.tasks[task_name]
             task_widget.update_status(task_widget.valid_count, task_widget.invalid_count, "Stopped")
         
+
     def monitor_validity_processes(self, processes, result_queue, status_queue, table_name, table):
-        def check_results():
+        def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             updates = []
@@ -507,7 +512,6 @@ class MainWindow(QMainWindow):
                     conn.rollback()
             conn.close()
 
-            # Apply updates to the table in batches
             for row, valid_status in table_updates:
                 table.setItem(row, 4, QTableWidgetItem(valid_status))
                 self.set_row_color(table, row)
@@ -516,18 +520,20 @@ class MainWindow(QMainWindow):
                 row, status = status_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(status))
                 self.set_row_color(table, row)
+
             task_widget = self.tasks[task_name]
             task_widget.update_status(valid_count, invalid_count, "In Progress")
 
             for p in processes:
                 if p.is_alive():
-                    QTimer.singleShot(100, check_results)
+                    QTimer.singleShot(100, partial(check_results, task_name))
                     return
+
             task_widget.update_status(valid_count, invalid_count, "Completed")
 
             print("Проверка валидности аккаунтов завершена")
 
-        QTimer.singleShot(100, check_results)
+        QTimer.singleShot(100, partial(check_results, task_name))
 
 
 
