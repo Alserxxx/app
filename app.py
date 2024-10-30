@@ -7,7 +7,7 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog,QSizePolicy
+    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea
 )
 from PyQt5.QtGui import QColor
 
@@ -40,14 +40,13 @@ class TaskMonitorWidget(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout()
-        
-        
+        layout.setAlignment(Qt.AlignTop)  # Ensure widgets are aligned to the top
+
         layout_style = """
         border: 5px solid #00796b;
         max-height: 250px;
         """
-        
-        
+
         label_style = """
         background: #F2FCFD;
         border: 1px solid #00796b;
@@ -74,21 +73,21 @@ class TaskMonitorWidget(QWidget):
 
         container_widget = QWidget()
         container_widget.setLayout(layout)
-        
+
         self.task_label = QLabel(f"Задача: {self.task_name}")
         self.status_label = QLabel("Статус: В процессе")
-        self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")   
-        self.valid_label = QLabel(f"Валидные: {self.valid_count}") 
-        self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}") 
+        self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
+        self.valid_label = QLabel(f"Валидные: {self.valid_count}")
+        self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
         self.time_label = QLabel("Время: 0с")
-        
+
         self.stop_button = QPushButton("Остановить")
         self.stop_button.clicked.connect(self.stop_task)
-        
+
         self.close_button = QPushButton("Закрыть")
         self.close_button.clicked.connect(self.close_task)
         self.close_button.setVisible(False)
-        
+
         layout.addWidget(self.task_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.accounts_label)
@@ -97,9 +96,7 @@ class TaskMonitorWidget(QWidget):
         layout.addWidget(self.time_label)
         layout.addWidget(self.stop_button)
         layout.addWidget(self.close_button)
-        
-        
-        #self.layout.setStyleSheet(layout_style)
+
         self.task_label.setStyleSheet(label_style)
         self.status_label.setStyleSheet(label_style)
         self.accounts_label.setStyleSheet(label_style)
@@ -108,19 +105,11 @@ class TaskMonitorWidget(QWidget):
         self.time_label.setStyleSheet(label_style)
         self.stop_button.setStyleSheet(button_style)
         self.close_button.setStyleSheet(button_style)
-        container_widget.setStyleSheet(layout_style) # Setting style for the container widget
-        #layout.addStretch()  # Add stretch to prevent full height stretching
+        container_widget.setStyleSheet(layout_style)  # Setting style for the container widget
+
         main_layout = QVBoxLayout(self)
-        container_widget.adjustSize()
-        container_widget.setAlignment(Qt.AlignTop)
-
-        container_widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
-        #container_widget.setFixedSize(container_widget.sizeHint())
-
         main_layout.addWidget(container_widget)
-        container_widget.adjustSize()
-        #self.setLayout(layout)
-
+        self.setLayout(main_layout)
     def update_time(self):
         elapsed_time = int(time.time() - self.start_time)
         self.time_label.setText(f"Время: {elapsed_time}с")
@@ -247,7 +236,6 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(self.delete_table)
-        #self.main_layout.addWidget(self.tab_widget)
 
         # QTableWidget для отображения таблицы аудитории
         self.audience_table = QTableWidget()
@@ -262,10 +250,20 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.audience_table)
 
         # Общий блок статистики
+
         self.stats_layout = QVBoxLayout()
+        self.stats_layout.setAlignment(Qt.AlignTop)  # Установка выравнивания по верхнему краю
+
         self.stats_container = QWidget()
+        self.stats_container = QGroupBox("Статистика")  # Using QGroupBox to add a title and border
+
         self.stats_container.setLayout(self.stats_layout)
-        self.splitter.addWidget(self.stats_container)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.stats_container)
+
+        self.splitter.addWidget(self.scroll_area)
 
         # Установка размеров для QSplitter
         self.splitter.setSizes([600, 200, 400])  # 60% - таблицы аккаунтов, 20% - таблица аудитории, 20% - блок статистики
