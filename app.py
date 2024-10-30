@@ -7,7 +7,7 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox
+    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit
 )
 from PyQt5.QtGui import QColor
 
@@ -226,7 +226,11 @@ class MainWindow(QMainWindow):
         self.create_table_btn = QPushButton("Создать таблицу")
         self.create_table_btn.clicked.connect(self.create_table)
         self.main_layout.addWidget(self.create_table_btn)
-
+        
+        self.create_proxy_group_btn = QPushButton("Создать группу прокси")
+        self.create_proxy_group_btn.clicked.connect(self.open_create_proxy_group_dialog)
+        self.main_layout.addWidget(self.create_proxy_group_btn)
+        
         # Кнопка "Загрузить аккаунты"
         self.load_accounts_btn = QPushButton("Загрузить аккаунты")
         self.load_accounts_btn.clicked.connect(self.load_accounts)
@@ -266,6 +270,7 @@ class MainWindow(QMainWindow):
         self.proxy_table.setHorizontalHeaderLabels(["Группа прокси" ,"Кол-во прокси", "Ссылка для обновления прокси"])
         self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.proxy_table.setSelectionBehavior(QTableWidget.SelectRows)  # Выделение всей строки
+        self.proxy_table.setEditTriggers(QTableWidget.NoEditTriggers)
 
 
         # QSplitter для разделения таблиц по горизонтали
@@ -301,7 +306,111 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
         self.audience_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.audience_table.customContextMenuRequested.connect(self.show_audience_context_menu)
+        self.load_proxy_groups()
+    def load_proxy_groups(self):
+        self.proxy_table.setRowCount(0)
+        query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
+        self.cursor.execute(query)
+        groups = self.cursor.fetchall()
+        for group in groups:
+            group_name = group[0].replace("proxygroup_", "")
+            query = f"SELECT COUNT(*) FROM {group[0]}"
+            self.cursor.execute(query)
+            try:
+                count = self.cursor.fetchone()[0]
+                query = f"SELECT url_update FROM {group[0]} LIMIT 1"
+                self.cursor.execute(query)
+                url_update = self.cursor.fetchone()[0]
+                self.update_proxy_table(group_name, count, url_update)
+            except:
+                none = ''
+    def open_create_proxy_group_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Создать группу прокси")
+        layout = QVBoxLayout()
 
+        # Field for group name
+        self.group_name_input = QLineEdit(dialog)
+        self.group_name_input.setPlaceholderText("Название группы")
+        layout.addWidget(self.group_name_input)
+
+        # Field for proxy file upload
+        self.proxy_file_input = QLineEdit(dialog)
+        self.proxy_file_input.setPlaceholderText("Файл прокси")
+        self.proxy_file_button = QPushButton("Обзор")
+        self.proxy_file_button.clicked.connect(self.select_proxy_file)
+        layout.addWidget(self.proxy_file_input)
+        layout.addWidget(self.proxy_file_button)
+
+        # Field for proxy type
+        self.proxy_type_input = QComboBox(dialog)
+        self.proxy_type_input.addItems(["socks5", "http"])
+        layout.addWidget(self.proxy_type_input)
+
+        # Field for update URL
+        self.update_url_input = QLineEdit(dialog)
+        self.update_url_input.setPlaceholderText("Ссылка для обновления прокси")
+        layout.addWidget(self.update_url_input)
+
+        # OK button
+        ok_button = QPushButton("OK", dialog)
+        ok_button.clicked.connect(self.create_proxy_group)
+        layout.addWidget(ok_button)
+
+        dialog.setLayout(layout)
+        dialog.exec_()
+
+    def select_proxy_file(self):
+        file_name, _ = QFileDialog.getOpenFileName(self, "Выбрать файл прокси", "", "All Files (*);;Text Files (*.txt)")
+        if file_name:
+            self.proxy_file_input.setText(file_name)
+
+    def create_proxy_group(self):
+        group_name = self.group_name_input.text()
+        proxy_file = self.proxy_file_input.text()
+        proxy_type = self.proxy_type_input.currentText()
+        update_url = self.update_url_input.text()
+
+        if not group_name or not proxy_file or not proxy_type:
+            QMessageBox.warning(self, "Ошибка", "Заполните все обязательные поля")
+            return
+
+        # Read proxies from file
+        try:
+            with open(proxy_file, 'r') as f:
+                proxies = f.readlines()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось прочитать файл прокси: {e}")
+            return
+
+        # Insert proxies into the database
+        table_name = f"proxygroup_{group_name}"
+        query = f"CREATE TABLE IF NOT EXISTS {table_name} (ip TEXT, port TEXT, login TEXT, password TEXT, type TEXT, url_update TEXT)"
+        self.cursor.execute(query)
+        for proxy in proxies:
+            if '@' in proxy:
+                ip, port = proxy.strip().split('@')[1].split(':')
+                login, password = proxy.strip().split('@')[0].split(':')
+            else:
+                ip, port = proxy.strip().split(':')
+                login = ''
+                password = ''
+                
+            query = f"INSERT INTO {table_name} (ip, port, login, password, type, url_update) VALUES (?, ?, ?, ?, ?, ?)"
+            self.cursor.execute(query, (ip, port, login, password, proxy_type, update_url))
+        self.conn.commit()
+
+        # Update proxy table in the UI
+        self.update_proxy_table(group_name, len(proxies), update_url)
+        QMessageBox.information(self, "Успех", "Группа прокси создана успешно")
+        self.load_proxy_groups()
+
+    def update_proxy_table(self, group_name, proxy_count, update_url):
+        row_position = self.proxy_table.rowCount()
+        self.proxy_table.insertRow(row_position)
+        self.proxy_table.setItem(row_position, 0, QTableWidgetItem(group_name))
+        self.proxy_table.setItem(row_position, 1, QTableWidgetItem(str(proxy_count)))
+        self.proxy_table.setItem(row_position, 2, QTableWidgetItem(update_url))
     def show_audience_context_menu(self, position):
         context_menu = QMenu()
         delete_action = QAction("Удалить группу", self)
@@ -444,7 +553,7 @@ class MainWindow(QMainWindow):
         print(f"Таблица {table_name} удалена")
 
     def load_tables(self):
-        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence' AND name != 'audience_users'")
+        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence' AND name != 'audience_users' AND name NOT LIKE 'proxygroup_%'")
         tables = self.cursor.fetchall()
         for table_name in tables:
             if table_name[0] != "audience":
