@@ -7,7 +7,7 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit
+    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox
 )
 from PyQt5.QtGui import QColor
 
@@ -20,7 +20,7 @@ from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QLabel, QVBoxLayout, QPushButton, QWidget
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from functools import partial
-
+import json
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
 
@@ -243,9 +243,15 @@ class MainWindow(QMainWindow):
 
         # Выпадающий список для выбора задачи
         self.task_combo = QComboBox()
-        self.task_combo.addItems(["Проверка валидности", "Парсинг аудитории", "Рассылка сообщений"])
+        self.task_combo.addItems(["Парсинг аудитории", "Рассылка сообщений"])
         self.main_layout.addWidget(self.task_combo)
 
+        # New Button "Проверка валидности"
+        self.check_validity_btn = QPushButton("Проверка валидности")
+        self.check_validity_btn.clicked.connect(self.open_check_validity_dialog)
+        self.main_layout.addWidget(self.check_validity_btn)
+        
+        
         # Кнопка "Заполнить таблицу"
         self.fill_table_btn = QPushButton("Заполнить таблицу")
         self.fill_table_btn.clicked.connect(self.fill_table)
@@ -307,6 +313,108 @@ class MainWindow(QMainWindow):
         self.audience_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.audience_table.customContextMenuRequested.connect(self.show_audience_context_menu)
         self.load_proxy_groups()
+        
+        
+    def open_check_validity_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Проверка валидности")
+        layout = QVBoxLayout()
+
+        # Proxy group dropdown
+        self.proxy_group_dropdown = QComboBox(dialog)
+        self.load_proxy_groups_into_dropdown()
+        layout.addWidget(self.proxy_group_dropdown)
+
+        # Number of processes input
+        self.processes_input = QSpinBox(dialog)
+        self.processes_input.setRange(1, 100)
+        self.processes_input.setValue(10)
+        layout.addWidget(self.processes_input)
+
+        # Number of threads input
+        self.threads_input = QSpinBox(dialog)
+        self.threads_input.setRange(1, 100)
+        self.threads_input.setValue(10)
+        layout.addWidget(self.threads_input)
+
+        # Config name input
+        self.config_name_input = QLineEdit(dialog)
+        self.config_name_input.setPlaceholderText("Название конфига")
+        layout.addWidget(self.config_name_input)
+
+        # Config dropdown
+        self.config_dropdown = QComboBox(dialog)
+        self.load_configs_into_dropdown()
+        layout.addWidget(self.config_dropdown)
+
+        # Load config button
+        load_config_button = QPushButton("Загрузить конфиг", dialog)
+        load_config_button.clicked.connect(self.load_config)
+        layout.addWidget(load_config_button)
+
+        # OK button
+        ok_button = QPushButton("OK", dialog)
+        ok_button.clicked.connect(self.save_and_start_validation)
+        layout.addWidget(ok_button)
+
+        dialog.setLayout(layout)
+        dialog.exec_()
+
+    def load_proxy_groups_into_dropdown(self):
+        query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
+        self.cursor.execute(query)
+        groups = self.cursor.fetchall()
+        self.proxy_group_dropdown.addItems([group[0].replace("proxygroup_", "") for group in groups])
+
+    def load_configs_into_dropdown(self):
+        # Load saved configs from a file or database
+        # For simplicity, using a file here
+        try:
+            with open('configs.json', 'r') as f:
+                configs = json.load(f)
+                self.config_dropdown.addItems(configs.keys())
+        except:
+            none = ''
+
+    def load_config(self):
+        config_name = self.config_dropdown.currentText()
+        try:
+            with open('configs.json', 'r') as f:
+                configs = json.load(f)
+                config = configs.get(config_name, {})
+                self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                self.processes_input.setValue(config.get('processes', 10))
+                self.threads_input.setValue(config.get('threads', 10))
+        except FileNotFoundError:
+            pass
+
+    def save_and_start_validation(self):
+        config_name = self.config_name_input.text()
+        proxy_group = self.proxy_group_dropdown.currentText()
+        processes = self.processes_input.value()
+        threads = self.threads_input.value()
+
+        # Save config
+        if config_name:
+            try:
+                with open('configs.json', 'r') as f:
+                    configs = json.load(f)
+            except FileNotFoundError:
+                configs = {}
+
+            configs[config_name] = {
+                'proxy_group': proxy_group,
+                'processes': processes,
+                'threads': threads
+            }
+
+            with open('configs.json', 'w') as f:
+                json.dump(configs, f)
+        
+        self.check_validity(current_table, selected_items, proxy_group, processes, threads)
+
+
+
     def load_proxy_groups(self):
         self.proxy_table.setRowCount(0)
         query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
@@ -324,6 +432,8 @@ class MainWindow(QMainWindow):
                 self.update_proxy_table(group_name, count, url_update)
             except:
                 none = ''
+    
+    
     def open_create_proxy_group_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Создать группу прокси")
@@ -643,7 +753,7 @@ class MainWindow(QMainWindow):
 
 
 
-    def check_validity(self, table, items):
+    def check_validity(self, table, items, proxy_group, processes, threads):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         selected_rows = list(set(item.row() for item in items))
         total_accounts = len(selected_rows)
