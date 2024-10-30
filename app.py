@@ -262,8 +262,8 @@ class MainWindow(QMainWindow):
         
         # QTableWidget для отображения прокси
         self.proxy_table = QTableWidget()
-        self.proxy_table.setColumnCount(2)
-        self.proxy_table.setHorizontalHeaderLabels(["Группа прокси", "Ссылка для обновления прокси"])
+        self.proxy_table.setColumnCount(3)
+        self.proxy_table.setHorizontalHeaderLabels(["Группа прокси" ,"Кол-во прокси", "Ссылка для обновления прокси"])
         self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.proxy_table.setSelectionBehavior(QTableWidget.SelectRows)  # Выделение всей строки
 
