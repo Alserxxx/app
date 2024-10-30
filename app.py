@@ -113,7 +113,7 @@ class TaskMonitorWidget(QWidget):
             self.invalid_count += invalid_count
             self.valid_label.setText(f"Валидные: {self.valid_count}")
             self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
-        elif self.task_name == "Парсинг аудитории":
+        elif 'Audience Parsing' in self.task_name:
             self.processed_count += processed_count
             self.processed_label.setText(f"Обработано: {self.processed_count}")
 
@@ -145,7 +145,7 @@ def check_validity_thread(account_queue, result_queue, status_queue):
         finally:
             account_queue.task_done()
 
-def process_function(account_list, table_name, db_filename, result_queue, status_queue):
+def process_function(account_list, table_name, result_queue, status_queue):
     account_queue = Queue()
     for account in account_list:
         account_queue.put(account)
@@ -159,27 +159,33 @@ def process_function(account_list, table_name, db_filename, result_queue, status
     for thread in threads:
         thread.join()
 
-def audience_task(login_list, row_list, table_name, group_name, db_filename, result_queue, status_queue):
-    def audience_thread(login, row):
-        conn = sqlite3.connect(db_filename)
-        cursor = conn.cursor()
-        user_ids = [f"user_{i}" for i in range(random.randint(10, 100))]  # Рандомное кол-во пользователей для каждого аккаунта
-        for user_id in user_ids:
-            query = "INSERT INTO audience_users (group_name, user_id, status) VALUES (?, ?, ?)"
-            cursor.execute(query, (group_name, user_id, "не пройден"))
-            conn.commit()
-            time.sleep(0.1)  # Пауза между каждым пользователем
-            result_queue.put((group_name, 1, row, table_name))  # Отправка результата в очередь
-            print(f"User {user_id} added to group {group_name} by account {login}")
-        cursor.close()
-        conn.close()
-        status_queue.put((row, "Завершен"))  # Отправка статуса завершения
+def audience_thread(account_queue, result_queue, status_queue, group_name):
+    while not account_queue.empty():
+        login, row = account_queue.get()
+        try:
 
-    print(f"Process started for accounts: {login_list}")
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(audience_thread, login_list, row_list)
-    print(f"Process finished for accounts: {login_list}")
+            user_ids = [f"user_{i}" for i in range(random.randint(10, 100))]  # Рандомное кол-во пользователей для каждого аккаунта
+            result_queue.put((login, group_name, user_ids, row))
 
+            
+        except Exception as e:
+            print(f"Error in thread for login {login}: {e}")
+        finally:
+            account_queue.task_done()
+
+def process_audience_function(account_list, table_name, group_name,  result_queue, status_queue):
+    account_queue = Queue()
+    for account in account_list:
+        account_queue.put(account)
+
+    threads = []
+    for _ in range(10):  # 100 потоков
+        thread = threading.Thread(target=audience_thread, args=(account_queue, result_queue, status_queue, group_name))
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
 
 
 class MainWindow(QMainWindow):
@@ -533,7 +539,7 @@ class MainWindow(QMainWindow):
             for row in chunk:
                 table.setItem(row, 4, QTableWidgetItem("В работе"))
                 self.set_row_color(table, row, QColor(250,250,140))
-            p = multiprocessing.Process(target=process_function, args=(list(zip(login_list, row_list)), table_name, self.db_filename, result_queue, status_queue))
+            p = multiprocessing.Process(target=process_function, args=(list(zip(login_list, row_list)), table_name, result_queue, status_queue))
             processes.append(p)
             p.start()
 
@@ -548,7 +554,7 @@ class MainWindow(QMainWindow):
             task_widget.update_status(0, 0, "Остановлен")
             self.terminate_validity_check(task_name)
 
-    def terminate_validity_check(self, task_id):
+    def terminate_audience_task(self, task_id):
         if task_id in self.tasks:
             task = self.tasks[task_id]
             if hasattr(task, 'processes') and task.processes:
@@ -560,10 +566,10 @@ class MainWindow(QMainWindow):
                 
                 # Update account status to 'Остановлен'
                 for row in task.rows:
-                    if task.table.item(row, 4).text() == "В работе":  # Use task.table instead of self.tab_widget.currentWidget()
+                    if task.table.item(row, 4).text() == "В работе":
                         task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
                         self.set_row_color(task.table, row, QColor(220,220,250))
-                        print(f"Account {task.table.item(row, 0).text()} status set to 'Остановлен'")
+                        print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
             else:
                 print(f"No processes found for task {task.task_name}.")
         else:
@@ -674,7 +680,8 @@ class MainWindow(QMainWindow):
             for row in chunk:
                 table.setItem(row, 4, QTableWidgetItem("В работе"))
                 self.set_row_color(table, row, QColor(250,250,140))
-            p = multiprocessing.Process(target=audience_task, args=(login_list, row_list, table_name, group_name, self.db_filename, result_queue, status_queue))
+            p = multiprocessing.Process(target=process_audience_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue, status_queue))
+
             processes.append(p)
             p.start()
 
@@ -683,6 +690,8 @@ class MainWindow(QMainWindow):
         print("Парсинг аудитории запущен")
     
     
+
+
     def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
@@ -693,14 +702,14 @@ class MainWindow(QMainWindow):
             processed_rows = set()  # Keep track of processed rows to avoid double counting
 
             while not result_queue.empty():
-                group_name, user_count, row, table_name = result_queue.get()
-                print(f"Processing result: group_name={group_name}, user_count={user_count}, row={row}")
+                #group_name, user_count, row, table_name = result_queue.get()
+                login, group_name, user_ids, row = result_queue.get()
 
                 if row in processed_rows:
                     print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
-                updates.append((user_count, group_name))
+                updates.append((user_ids, group_name))
                 table_updates.append((row, user_count))
                 processed_rows.add(row)  # Mark row as processed
 
@@ -724,7 +733,6 @@ class MainWindow(QMainWindow):
                 table.setItem(row, 4, QTableWidgetItem(str(user_count)))
                 self.set_row_color(table, row)
 
-
             task_widget = self.tasks[task_name]
             task_widget.update_status(0, 0, 0, "В работе")  # Example usage
 
@@ -732,12 +740,10 @@ class MainWindow(QMainWindow):
                 if p.is_alive():
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
-            task_widget = self.tasks[task_name]
             task_widget.update_status(0,0,0, "Завершен")
             print("Парсинг аудитории завершена")
 
-        QTimer.singleShot(100, partial(check_results, task_name))  
-    
+        QTimer.singleShot(100, partial(check_results, task_name))
 
     
     
