@@ -28,29 +28,24 @@ class TaskMonitorWidget(QWidget):
         super().__init__()
         self.task_name = task_name
         self.total_accounts = total_accounts
-        self.task_id = task_id  # Add task_id
-        self.table = table  # Add table reference
+        self.task_id = task_id
+        self.table = table
         self.valid_count = 0
         self.invalid_count = 0
+        self.processed_count = 0
         self.start_time = time.time()
         self.setup_ui()
 
-        # Initialize and start a QTimer for updating time
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_time)
-        self.timer.start(1000)  # Update every second
+        self.timer.start(1000)
 
     def stop_task(self):
-        self.stop_task_signal.emit(self.task_id)  # Emit task_id instead of task_name
+        self.stop_task_signal.emit(self.task_id)
 
     def setup_ui(self):
         layout = QVBoxLayout()
-        layout.setAlignment(Qt.AlignTop)  # Ensure widgets are aligned to the top
-
-        layout_style = """
-        border: 5px solid #00796b;
-        max-height: 250px;
-        """
+        layout.setAlignment(Qt.AlignTop)
 
         label_style = """
         background: #F2FCFD;
@@ -59,31 +54,12 @@ class TaskMonitorWidget(QWidget):
         color: #004d40;
         """
 
-        button_style = """
-        background: green;
-        border: 1px solid;
-        padding: 8px 16px;
-        color: black;
-        border-radius: 4px;
-        """
-
-        button_hover_style = """
-        QPushButton:hover {
-            background: red;
-        }
-        QPushButton:disabled {
-            background: blue;
-        }
-        """
-
-        container_widget = QWidget()
-        container_widget.setLayout(layout)
-
         self.task_label = QLabel(f"Задача: {self.task_name}")
         self.status_label = QLabel("Статус: В процессе")
         self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
         self.valid_label = QLabel(f"Валидные: {self.valid_count}")
         self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
+        self.processed_label = QLabel(f"Обработано: {self.processed_count}")
         self.time_label = QLabel("Время: 0с")
 
         self.stop_button = QPushButton("Остановить")
@@ -98,6 +74,7 @@ class TaskMonitorWidget(QWidget):
         layout.addWidget(self.accounts_label)
         layout.addWidget(self.valid_label)
         layout.addWidget(self.invalid_label)
+        layout.addWidget(self.processed_label)
         layout.addWidget(self.time_label)
         layout.addWidget(self.stop_button)
         layout.addWidget(self.close_button)
@@ -107,25 +84,34 @@ class TaskMonitorWidget(QWidget):
         self.accounts_label.setStyleSheet(label_style)
         self.valid_label.setStyleSheet(label_style)
         self.invalid_label.setStyleSheet(label_style)
+        self.processed_label.setStyleSheet(label_style)
         self.time_label.setStyleSheet(label_style)
-        self.stop_button.setStyleSheet(button_style)
-        self.close_button.setStyleSheet(button_style)
-        container_widget.setStyleSheet(layout_style)  # Setting style for the container widget
+
+        container_widget = QWidget()
+        container_widget.setLayout(layout)
+        container_widget.setStyleSheet("border: 5px solid #00796b; max-height: 250px;")
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(container_widget)
         self.setLayout(main_layout)
+
     def update_time(self):
         elapsed_time = int(time.time() - self.start_time)
         self.time_label.setText(f"Время: {elapsed_time}с")
 
-    def update_status(self, valid_count, invalid_count, status):
-        print(f"Before update: valid_count={self.valid_count}, invalid_count={self.invalid_count}")
-        self.valid_count += valid_count  # Increment the count instead of setting it
-        self.invalid_count += invalid_count  # Increment the count instead of setting it
-        print(f"After update: valid_count={self.valid_count}, invalid_count={self.invalid_count}")
-        self.valid_label.setText(f"Валидные: {self.valid_count}")
-        self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
+    def update_status(self, valid_count=0, invalid_count=0, processed_count=0, status=""):
+        print(f"Before update: valid_count={self.valid_count}, invalid_count={self.invalid_count}, processed_count={self.processed_count}")
+        self.valid_count += valid_count
+        self.invalid_count += invalid_count
+        self.processed_count += processed_count
+        print(f"After update: valid_count={self.valid_count}, invalid_count={self.invalid_count}, processed_count={self.processed_count}")
+
+        if self.task_name == "Проверка валидности":
+            self.valid_label.setText(f"Валидные: {self.valid_count}")
+            self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
+        elif self.task_name == "Парсинг аудитории":
+            self.processed_label.setText(f"Обработано: {self.processed_count}")
+
         self.status_label.setText(f"Статус: {status}")
 
         if status in ["Завершен", "Остановлен"]:
@@ -133,10 +119,11 @@ class TaskMonitorWidget(QWidget):
             self.close_button.setVisible(True)
             self.timer.stop()
 
-
-
     def close_task(self):
-        self.close()   
+        self.close()
+        
+        
+        
         
 def check_validity_thread(account_queue, result_queue, status_queue):
     while not account_queue.empty():
@@ -630,9 +617,10 @@ class MainWindow(QMainWindow):
                 table.setItem(row, 4, QTableWidgetItem(status))
                 self.set_row_color(table, row)
                 print(f"Updated status queue row {row} with status {status}")
+        
 
             task_widget = self.tasks[task_name]
-            task_widget.update_status(valid_count, invalid_count, "В работе")
+            task_widget.update_status(valid_count, invalid_count, processed_count, "В работе")  # Example usage
             print(f"Task widget updated: valid_count={valid_count}, invalid_count={invalid_count}, status='В работе'")
 
             for p in processes:
@@ -640,7 +628,7 @@ class MainWindow(QMainWindow):
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
 
-            task_widget.update_status(valid_count, invalid_count, "Завершен")
+            task_widget.update_status(valid_count, invalid_count, processed_count, "Завершен")
             print(f"Task widget final update: valid_count={valid_count}, invalid_count={invalid_count}, status='Завершен'")
             print("Проверка валидности аккаунтов завершена")
 
@@ -648,47 +636,27 @@ class MainWindow(QMainWindow):
     
     def parse_audience(self, table, items):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
-        
-        # Проверка существования таблицы
-        query = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
-        self.cursor.execute(query, (table_name,))
-        if not self.cursor.fetchone():
-            print(f"Error: Table {table_name} not found")
-            return
-        
-        # Запрос выбора действия у пользователя
-        choice, ok = QInputDialog.getItem(self, "Выбор действия", "Выберите действие:", ["Создать новую группу", "Использовать существующую группу"], 0, False)
-        if not ok:
-            return
-        
-        if choice == "Создать новую группу":
-            group_name, ok = QInputDialog.getText(self, "Создать группу", "Введите название группы:")
-            if not ok or not group_name:
-                return
-        else:
-            # Получение списка существующих групп
-            query = "SELECT DISTINCT group_name FROM audience_users"
-            self.cursor.execute(query)
-            existing_groups = [row[0] for row in self.cursor.fetchall()]
-            if not existing_groups:
-                print("No existing groups found. Please create a new group.")
-                return
-
-            group_name, ok = QInputDialog.getItem(self, "Выбор группы", "Выберите существующую группу:", existing_groups, 0, False)
-            if not ok or not group_name:
-                return
-
         selected_rows = list(set(item.row() for item in items))
         total_accounts = len(selected_rows)
         processes = []
         result_queue = multiprocessing.Queue()
         status_queue = multiprocessing.Queue()
-        
+
         if total_accounts == 0:
             return
+        group_name, ok = QInputDialog.getText(self, "Группа аудитории", "Введите название группы аудитории:")
+        if not ok or not group_name.strip():
+            return
 
-        # Разделение на процессы
-        process_count = min(100, (total_accounts + 99) // 100)
+        task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
+        task_name = f"Audience Parsing ({table_name})"
+        task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table, group_name)  # Pass table and group_name here
+        task_widget.stop_task_signal.connect(lambda: self.stop_task(task_id))
+        self.stats_layout.addWidget(task_widget)
+        self.tasks[task_id] = task_widget
+        task_widget.rows = selected_rows  # Associate rows with the task
+
+        process_count = min(10, (total_accounts + 99) // 100)
         accounts_per_process = (total_accounts + process_count - 1) // process_count
 
         print(f"Starting {process_count} processes with {accounts_per_process} accounts each.")
@@ -700,43 +668,81 @@ class MainWindow(QMainWindow):
             for row in chunk:
                 table.setItem(row, 4, QTableWidgetItem("В работе"))
                 self.set_row_color(table, row, QColor(250,250,140))
-                print(f"Account {table.item(row, 0).text()} status set to 'В работе'")
             p = multiprocessing.Process(target=audience_task, args=(login_list, row_list, table_name, group_name, self.db_filename, result_queue, status_queue))
             processes.append(p)
             p.start()
-        
-        self.monitor_processes(processes, result_queue, status_queue, table, selected_rows)
+
+        task_widget.processes = processes  # Associate processes with the task_widget
+        self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id)
         print("Парсинг аудитории запущен")
-    
-    def monitor_processes(self, processes, result_queue, status_queue, table, selected_rows):
-        def check_results():
+    def monitor_audience_processes(self, processes, result_queue, status_queue, table, selected_rows):
+        def check_results(task_name):
+            valid_count = 0
+            invalid_count = 0
+            processed_count = 0
+
             while not result_queue.empty():
                 result = result_queue.get()
                 self.update_audience_table(result, result[0])
                 row = result[2]
                 table.setItem(row, 4, QTableWidgetItem("В работе"))
                 self.set_row_color(table, row, QColor(250,250,140))
-            
+                processed_count += 1
+
             while not status_queue.empty():
                 row, status = status_queue.get()
                 table.setItem(row, 4, QTableWidgetItem(status))
                 self.set_row_color(table, row, QColor(220,220,250) if status == "Завершен" else QColor(250,250,140))
-                print(f"Account {table.item(row, 0).text()} status set to '{status}'")
-            
+                if status == 'Валид':
+                    valid_count += 1
+                elif status == 'Невалид':
+                    invalid_count += 1
+
+            task_widget = self.tasks[task_name]
+            task_widget.update_status(valid_count, invalid_count, processed_count, "В работе")
+
             for p in processes:
                 if p.is_alive():
-                    QTimer.singleShot(100, check_results)
+                    QTimer.singleShot(100, partial(check_results, task_name))
                     return
-            
-            # Обновить статус и цвет аккаунтов после завершения всех процессов
-            for row in selected_rows:
-                if table.item(row, 4).text() != "Завершен":
-                    table.setItem(row, 4, QTableWidgetItem("Завершен"))
-                    self.set_row_color(table, row, QColor(220,220,250))
-                    print(f"Account {table.item(row, 0).text()} status set to 'Завершен'")
+
+            task_widget.update_status(valid_count, invalid_count, processed_count, "Завершен")
             print("Парсинг аудитории завершен")
-        
-        QTimer.singleShot(100, check_results)
+
+        QTimer.singleShot(100, partial(check_results, task_name))
+    
+    def stop_task(self, task_id):
+        task_widget = self.tasks.get(task_id)
+        if task_widget:
+            task_widget.update_status(0, "Остановлен")
+            self.terminate_audience_task(task_id)
+
+    def terminate_audience_task(self, task_id):
+        if task_id in self.tasks:
+            task = self.tasks[task_id]
+            if hasattr(task, 'processes') and task.processes:
+                for process in task.processes:
+                    if process.is_alive():
+                        process.terminate()
+                        process.join()
+                print(f"All processes for task {task.task_name} have been terminated.")
+                
+                # Update account status to 'Остановлен'
+                for row in task.rows:
+                    if task.table.item(row, 4).text() == "В работе":  # Use task.table instead of self.tab_widget.currentWidget()
+                        task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
+                        self.set_row_color(task.table, row, QColor(220,220,250))
+                        print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
+            else:
+                print(f"No processes found for task {task.task_name}.")
+        else:
+            print(f"Task {task_id} not found.")
+    
+    
+    
+    
+    
+    
     
     
     def update_audience_table(self, result, group_name):
