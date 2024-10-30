@@ -24,8 +24,9 @@ from functools import partial
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
 
-    def __init__(self, task_name, total_accounts, task_id, table):
+    def __init__(self, task_name, total_accounts, task_id, table, group_name):
         super().__init__()
+        self.group_name = group_name
         self.task_name = task_name
         self.total_accounts = total_accounts
         self.task_id = task_id
@@ -53,8 +54,12 @@ class TaskMonitorWidget(QWidget):
         padding: 5px;
         color: #004d40;
         """
+        if 'Validation Check' in self.task_name:
 
-        self.task_label = QLabel(f"Задача: {self.task_name}")
+            self.task_label = QLabel(f"Задача: {self.task_name}")
+        else:
+            self.task_label = QLabel(f"Задача: {self.task_name} {self.group_name}")
+
         self.status_label = QLabel("Статус: В процессе")
         self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
         self.valid_label = QLabel(f"Валидные: {self.valid_count}")
@@ -99,17 +104,17 @@ class TaskMonitorWidget(QWidget):
         elapsed_time = int(time.time() - self.start_time)
         self.time_label.setText(f"Время: {elapsed_time}с")
 
-    def update_status(self, valid_count=0, invalid_count=0, processed_count=0, status=""):
-        print(f"Before update: valid_count={self.valid_count}, invalid_count={self.invalid_count}, processed_count={self.processed_count}")
-        self.valid_count += valid_count
-        self.invalid_count += invalid_count
-        self.processed_count += processed_count
-        print(f"After update: valid_count={self.valid_count}, invalid_count={self.invalid_count}, processed_count={self.processed_count}")
+    def update_status(self, valid_count, invalid_count, processed_count, status):
 
-        if self.task_name == "Проверка валидности":
+        
+        print(self.task_name)
+        if 'Validation Check' in self.task_name:
+            self.valid_count += valid_count
+            self.invalid_count += invalid_count
             self.valid_label.setText(f"Валидные: {self.valid_count}")
             self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
         elif self.task_name == "Парсинг аудитории":
+            self.processed_count += processed_count
             self.processed_label.setText(f"Обработано: {self.processed_count}")
 
         self.status_label.setText(f"Статус: {status}")
@@ -510,7 +515,7 @@ class MainWindow(QMainWindow):
             return
         task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
         task_name = f"Validation Check ({table_name})"
-        task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table)  # Pass table here
+        task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table, '')  # Pass table here
         task_widget.stop_task_signal.connect(lambda: self.stop_task(task_id))
         self.stats_layout.addWidget(task_widget)
         self.tasks[task_id] = task_widget
@@ -620,7 +625,7 @@ class MainWindow(QMainWindow):
         
 
             task_widget = self.tasks[task_name]
-            task_widget.update_status(valid_count, invalid_count, processed_count, "В работе")  # Example usage
+            task_widget.update_status(valid_count, invalid_count, '', "В работе")  # Example usage
             print(f"Task widget updated: valid_count={valid_count}, invalid_count={invalid_count}, status='В работе'")
 
             for p in processes:
@@ -628,7 +633,7 @@ class MainWindow(QMainWindow):
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
 
-            task_widget.update_status(valid_count, invalid_count, processed_count, "Завершен")
+            task_widget.update_status(valid_count, invalid_count, '', "Завершен")
             print(f"Task widget final update: valid_count={valid_count}, invalid_count={invalid_count}, status='Завершен'")
             print("Проверка валидности аккаунтов завершена")
 
@@ -651,6 +656,7 @@ class MainWindow(QMainWindow):
         task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
         task_name = f"Audience Parsing ({table_name})"
         task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table, group_name)  # Pass table and group_name here
+
         task_widget.stop_task_signal.connect(lambda: self.stop_task(task_id))
         self.stats_layout.addWidget(task_widget)
         self.tasks[task_id] = task_widget
@@ -675,46 +681,61 @@ class MainWindow(QMainWindow):
         task_widget.processes = processes  # Associate processes with the task_widget
         self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id)
         print("Парсинг аудитории запущен")
-    def monitor_audience_processes(self, processes, result_queue, status_queue, table, selected_rows):
-        def check_results(task_name):
-            valid_count = 0
-            invalid_count = 0
-            processed_count = 0
+    def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_id):
+        def check_results(task_id):
+            conn = sqlite3.connect('total.db')
+            cursor = conn.cursor()
+            updates = []
+            table_updates = []
+            collected_users = 0
+            processed_rows = set()  # Keep track of processed rows to avoid double counting
 
             while not result_queue.empty():
-                result = result_queue.get()
-                self.update_audience_table(result, result[0])
-                row = result[2]
-                table.setItem(row, 4, QTableWidgetItem("В работе"))
-                self.set_row_color(table, row, QColor(250,250,140))
-                processed_count += 1
+                group_name, user_count, row, table_name = result_queue.get()
+                print(f"Processing result: group_name={group_name}, user_count={user_count}, row={row}")
 
-            while not status_queue.empty():
-                row, status = status_queue.get()
-                table.setItem(row, 4, QTableWidgetItem(status))
-                self.set_row_color(table, row, QColor(220,220,250) if status == "Завершен" else QColor(250,250,140))
-                if status == 'Валид':
-                    valid_count += 1
-                elif status == 'Невалид':
-                    invalid_count += 1
+                if row in processed_rows:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
 
-            task_widget = self.tasks[task_name]
-            task_widget.update_status(valid_count, invalid_count, processed_count, "В работе")
+                updates.append((user_count, group_name))
+                table_updates.append((row, user_count))
+                processed_rows.add(row)  # Mark row as processed
 
-            for p in processes:
-                if p.is_alive():
-                    QTimer.singleShot(100, partial(check_results, task_name))
-                    return
+                collected_users += user_count
 
-            task_widget.update_status(valid_count, invalid_count, processed_count, "Завершен")
-            print("Парсинг аудитории завершен")
+                print(f"User count: {collected_users}")
 
-        QTimer.singleShot(100, partial(check_results, task_name))
+            if updates:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET user_count = ? WHERE group_name = ?"
+                    cursor.executemany(query, updates)
+                    conn.commit()
+                    print(f"Database updated with {len(updates)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()
+            conn.close()
+
+            for row, user_count in table_updates:
+                table.setItem(row, 4, QTableWidgetItem(str(user_count)))
+                self.set_row_color(table, row)
+
+            task_widget = self.tasks[task_id]
+            task_widget.update_status(0,0,collected_users, "Завершен")
+
+        future = self.executor.submit(check_results, task_id)
+
+        def handle_future(future):
+            print("Checking results finished.")
+
+        future.add_done_callback(handle_future)
     
     def stop_task(self, task_id):
         task_widget = self.tasks.get(task_id)
         if task_widget:
-            task_widget.update_status(0, "Остановлен")
+            task_widget.update_status(0,0,0, "Остановлен")
             self.terminate_audience_task(task_id)
 
     def terminate_audience_task(self, task_id):
