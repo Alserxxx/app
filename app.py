@@ -57,14 +57,15 @@ class TaskMonitorWidget(QWidget):
         if 'Validation Check' in self.task_name:
 
             self.task_label = QLabel(f"Задача: {self.task_name}")
-        else:
-            self.task_label = QLabel(f"Задача: {self.task_name} {self.group_name}")
+            self.valid_label = QLabel(f"Валидные: {self.valid_count}")
+            self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
+        if 'Audience' in self.task_name:
+            self.task_label = QLabel(f"Задача: {self.task_name} Запись в [ {self.group_name} ]")
+            self.processed_label = QLabel(f"Обработано: {self.processed_count}")
 
         self.status_label = QLabel("Статус: В процессе")
         self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
-        self.valid_label = QLabel(f"Валидные: {self.valid_count}")
-        self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
-        self.processed_label = QLabel(f"Обработано: {self.processed_count}")
+
         self.time_label = QLabel("Время: 0с")
 
         self.stop_button = QPushButton("Остановить")
@@ -77,9 +78,17 @@ class TaskMonitorWidget(QWidget):
         layout.addWidget(self.task_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.accounts_label)
-        layout.addWidget(self.valid_label)
-        layout.addWidget(self.invalid_label)
-        layout.addWidget(self.processed_label)
+        
+        if 'Validation Check' in self.task_name:
+            layout.addWidget(self.valid_label)
+            layout.addWidget(self.invalid_label)      
+            self.valid_label.setStyleSheet(label_style)
+            self.invalid_label.setStyleSheet(label_style)
+            
+        if 'Audience' in self.task_name:
+            layout.addWidget(self.processed_label)
+            self.processed_label.setStyleSheet(label_style)
+
         layout.addWidget(self.time_label)
         layout.addWidget(self.stop_button)
         layout.addWidget(self.close_button)
@@ -87,9 +96,8 @@ class TaskMonitorWidget(QWidget):
         self.task_label.setStyleSheet(label_style)
         self.status_label.setStyleSheet(label_style)
         self.accounts_label.setStyleSheet(label_style)
-        self.valid_label.setStyleSheet(label_style)
-        self.invalid_label.setStyleSheet(label_style)
-        self.processed_label.setStyleSheet(label_style)
+
+        
         self.time_label.setStyleSheet(label_style)
 
         container_widget = QWidget()
@@ -163,9 +171,14 @@ def audience_thread(account_queue, result_queue, status_queue, group_name):
     while not account_queue.empty():
         login, row = account_queue.get()
         try:
+            for _ in range(5):
+                time.sleep(random.uniform(1, 10))
 
-            user_ids = [f"user_{i}" for i in range(random.randint(10, 100))]  # Рандомное кол-во пользователей для каждого аккаунта
-            result_queue.put((login, group_name, user_ids, row))
+                user_ids = [f"user_{i}" for i in range(random.randint(10, 100))]  # Рандомное кол-во пользователей для каждого аккаунта
+                result_queue.put((login, group_name, user_ids, row))
+                
+                
+            result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
 
             
         except Exception as e:
@@ -245,10 +258,20 @@ class MainWindow(QMainWindow):
         self.audience_table.setHorizontalHeaderLabels(["Название группы аудитории", "Кол-во пользователей", "Кол-во пройденных пользователей", "Дата создания группы"])
         self.audience_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.audience_table.setSelectionBehavior(QTableWidget.SelectRows)  # Выделение всей строки
+        
+        
+        # QTableWidget для отображения прокси
+        self.proxy_table = QTableWidget()
+        self.proxy_table.setColumnCount(2)
+        self.proxy_table.setHorizontalHeaderLabels(["Группа прокси", "Ссылка для обновления прокси"])
+        self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.proxy_table.setSelectionBehavior(QTableWidget.SelectRows)  # Выделение всей строки
+
 
         # QSplitter для разделения таблиц по горизонтали
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.tab_widget)
+        self.splitter.addWidget(self.proxy_table)
         self.splitter.addWidget(self.audience_table)
 
         # Общий блок статистики
@@ -268,7 +291,7 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.scroll_area)
 
         # Установка размеров для QSplitter
-        self.splitter.setSizes([600, 200, 400])  # 60% - таблицы аккаунтов, 20% - таблица аудитории, 20% - блок статистики
+        self.splitter.setSizes([600, 200, 200, 200])  # 60% - таблицы аккаунтов, 20% - таблица аудитории, 20% - блок статистики
 
         self.main_layout.addWidget(self.splitter)
 
@@ -385,8 +408,10 @@ class MainWindow(QMainWindow):
                     color = QColor(250,250,140)
                 elif status_text == "Завершен":
                     color = QColor(220,220,250)
+                elif status_text == "Закончил парсинг":
+                    color = QColor(220,220,250)
                 else:
-                    color = None  # Не менять цвет
+                    color = QColor(250,250,140) #
         if color is not None:
             for col in range(table.columnCount()):
                 table.item(row, col).setBackground(color)
@@ -548,11 +573,11 @@ class MainWindow(QMainWindow):
         print("Проверка валидности аккаунтов запущена")
     
 
-    def stop_task(self, task_name):
-        task_widget = self.tasks.get(task_name)
+    def stop_task(self, task_id):
+        task_widget = self.tasks.get(task_id)
         if task_widget:
-            task_widget.update_status(0, 0, "Остановлен")
-            self.terminate_validity_check(task_name)
+            task_widget.update_status(0,0,0, "Остановлен")
+            self.terminate_audience_task(task_id)
 
     def terminate_audience_task(self, task_id):
         if task_id in self.tasks:
@@ -653,12 +678,27 @@ class MainWindow(QMainWindow):
         result_queue = multiprocessing.Queue()
         status_queue = multiprocessing.Queue()
 
-        if total_accounts == 0:
+        # Запрос выбора действия у пользователя
+        choice, ok = QInputDialog.getItem(self, "Выбор действия", "Выберите действие:", ["Создать новую группу", "Использовать существующую группу"], 0, False)
+        if not ok:
             return
-        group_name, ok = QInputDialog.getText(self, "Группа аудитории", "Введите название группы аудитории:")
-        if not ok or not group_name.strip():
-            return
+        
+        if choice == "Создать новую группу":
+            group_name, ok = QInputDialog.getText(self, "Создать группу", "Введите название группы:")
+            if not ok or not group_name:
+                return
+        else:
+            # Получение списка существующих групп
+            query = "SELECT DISTINCT group_name FROM audience_users"
+            self.cursor.execute(query)
+            existing_groups = [row[0] for row in self.cursor.fetchall()]
+            if not existing_groups:
+                print("No existing groups found. Please create a new group.")
+                return
 
+            group_name, ok = QInputDialog.getItem(self, "Выбор группы", "Выберите существующую группу:", existing_groups, 0, False)
+            if not ok or not group_name:
+                return
         task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
         task_name = f"Audience Parsing ({table_name})"
         task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table, group_name)  # Pass table and group_name here
@@ -686,23 +726,26 @@ class MainWindow(QMainWindow):
             p.start()
 
         task_widget.processes = processes  # Associate processes with the task_widget
-        self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id)
+        self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id,group_name)
         print("Парсинг аудитории запущен")
     
     
 
 
-    def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_name):
+    def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_name,group_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             table_updates = []
             collected_users = 0
+            user_count = 0
             processed_rows = set()  # Keep track of processed rows to avoid double counting
 
             while not result_queue.empty():
-                login, group_name, user_ids, row = result_queue.get()
+                login, status_acc, user_ids, row = result_queue.get()
+                print(status_acc)
 
+  
                 if row in processed_rows:
                     print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
@@ -718,13 +761,19 @@ class MainWindow(QMainWindow):
                 # Сохранение пользователей пакетно
                 user_data = [(group_name, user_id, "Новый") for user_id in user_ids]
                 cursor.executemany("INSERT INTO audience_users (group_name, user_id, status) VALUES (?, ?, ?)", user_data)
+                self.update_audience_table((group_name, user_count, row, table_name))
 
             conn.commit()
             conn.close()
 
             for row, user_count in table_updates:
-                table.setItem(row, 4, QTableWidgetItem(str(user_count)))
-                self.set_row_color(table, row)
+                print(table_updates)
+                if 'Закончил парсинг' in status_acc:
+                    table.setItem(row, 4, QTableWidgetItem('Закончил парсинг'))
+                    self.set_row_color(table, row)  
+                else:
+                    table.setItem(row, 4, QTableWidgetItem('Собрал: '+str(user_count)+' ...'))
+                    self.set_row_color(table, row)
 
             task_widget = self.tasks[task_name]
             task_widget.update_status(0, 0, collected_users, "В работе")  # Обновление статуса с учетом количества пользователей
@@ -734,6 +783,9 @@ class MainWindow(QMainWindow):
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
             task_widget.update_status(0, 0, collected_users, "Завершен")
+            #for row, user_count in table_updates:
+            #    table.setItem(row, 4, QTableWidgetItem('Парсинг завершен'))
+            #    self.set_row_color(table, row)
             print("Парсинг аудитории завершена")
 
         QTimer.singleShot(100, partial(check_results, task_name))
@@ -758,7 +810,7 @@ class MainWindow(QMainWindow):
                 
                 # Update account status to 'Остановлен'
                 for row in task.rows:
-                    if task.table.item(row, 4).text() == "В работе":  # Use task.table instead of self.tab_widget.currentWidget()
+                    if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
                         task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
                         self.set_row_color(task.table, row, QColor(220,220,250))
                         print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
@@ -774,8 +826,9 @@ class MainWindow(QMainWindow):
     
     
     
-    def update_audience_table(self, result, group_name):
+    def update_audience_table(self, result):
         group_name, user_count, row, table_name = result
+        
         # Проверить, существует ли группа уже в таблице
         rows = self.audience_table.rowCount()
         group_row = -1
