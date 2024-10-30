@@ -696,20 +696,18 @@ class MainWindow(QMainWindow):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
-            updates = []
             table_updates = []
             collected_users = 0
             processed_rows = set()  # Keep track of processed rows to avoid double counting
 
             while not result_queue.empty():
-                #group_name, user_count, row, table_name = result_queue.get()
                 login, group_name, user_ids, row = result_queue.get()
 
                 if row in processed_rows:
                     print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
-                updates.append((user_ids, group_name))
+                user_count = len(user_ids)  # Подсчет количества пользователей
                 table_updates.append((row, user_count))
                 processed_rows.add(row)  # Mark row as processed
 
@@ -717,16 +715,11 @@ class MainWindow(QMainWindow):
 
                 print(f"User count: {collected_users}")
 
-            if updates:
-                cursor.execute("BEGIN TRANSACTION")
-                try:
-                    query = f"UPDATE {table_name} SET user_count = ? WHERE group_name = ?"
-                    cursor.executemany(query, updates)
-                    conn.commit()
-                    print(f"Database updated with {len(updates)} entries.")
-                except sqlite3.OperationalError as e:
-                    print(f"Database error: {str(e)}")
-                    conn.rollback()
+                # Сохранение пользователей пакетно
+                user_data = [(group_name, user_id, "Новый") for user_id in user_ids]
+                cursor.executemany("INSERT INTO audience_users (group_name, user_id, status) VALUES (?, ?, ?)", user_data)
+
+            conn.commit()
             conn.close()
 
             for row, user_count in table_updates:
@@ -734,13 +727,13 @@ class MainWindow(QMainWindow):
                 self.set_row_color(table, row)
 
             task_widget = self.tasks[task_name]
-            task_widget.update_status(0, 0, 0, "В работе")  # Example usage
+            task_widget.update_status(0, 0, collected_users, "В работе")  # Обновление статуса с учетом количества пользователей
 
             for p in processes:
                 if p.is_alive():
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
-            task_widget.update_status(0,0,0, "Завершен")
+            task_widget.update_status(0, 0, collected_users, "Завершен")
             print("Парсинг аудитории завершена")
 
         QTimer.singleShot(100, partial(check_results, task_name))
@@ -790,7 +783,7 @@ class MainWindow(QMainWindow):
             if self.audience_table.item(row, 0).text() == group_name:
                 group_row = row
                 break
-        
+
         if group_row == -1:
             # Группа не существует, добавить новую строку
             self.audience_table.insertRow(self.audience_table.rowCount())
@@ -805,6 +798,9 @@ class MainWindow(QMainWindow):
             new_count = current_count + user_count
             self.audience_table.setItem(group_row, 1, QTableWidgetItem(str(new_count)))
         print(f"Updated group {group_name} with {user_count} new users")
+
+        # Вызов функции обновления пользовательского интерфейса после добавления группы
+        self.audience_table.viewport().update()
     def send_messages(self, table, items):
         selected_rows = set(item.row() for item in items)
         processes = []
