@@ -681,8 +681,10 @@ class MainWindow(QMainWindow):
         task_widget.processes = processes  # Associate processes with the task_widget
         self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id)
         print("Парсинг аудитории запущен")
-    def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_id):
-        def check_results(task_id):
+    
+    
+    def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_name):
+        def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             updates = []
@@ -722,15 +724,22 @@ class MainWindow(QMainWindow):
                 table.setItem(row, 4, QTableWidgetItem(str(user_count)))
                 self.set_row_color(table, row)
 
-            task_widget = self.tasks[task_id]
-            task_widget.update_status(0,0,collected_users, "Завершен")
 
-        future = self.executor.submit(check_results, task_id)
+            task_widget = self.tasks[task_name]
+            task_widget.update_status(0, 0, 0, "В работе")  # Example usage
 
-        def handle_future(future):
-            print("Checking results finished.")
+            for p in processes:
+                if p.is_alive():
+                    QTimer.singleShot(100, partial(check_results, task_name))
+                    return
+            task_widget = self.tasks[task_name]
+            task_widget.update_status(0,0,0, "Завершен")
+            print("Парсинг аудитории завершена")
 
-        future.add_done_callback(handle_future)
+        QTimer.singleShot(100, partial(check_results, task_name))  
+    
+
+    
     
     def stop_task(self, task_id):
         task_widget = self.tasks.get(task_id)
