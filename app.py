@@ -7,7 +7,7 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea
+    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox
 )
 from PyQt5.QtGui import QColor
 
@@ -24,19 +24,24 @@ from functools import partial
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
 
-    def __init__(self, task_name, total_accounts):
+    def __init__(self, task_name, total_accounts, task_id, table):
         super().__init__()
         self.task_name = task_name
         self.total_accounts = total_accounts
+        self.task_id = task_id  # Add task_id
+        self.table = table  # Add table reference
         self.valid_count = 0
         self.invalid_count = 0
         self.start_time = time.time()
         self.setup_ui()
-        
+
         # Initialize and start a QTimer for updating time
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_time)
         self.timer.start(1000)  # Update every second
+
+    def stop_task(self):
+        self.stop_task_signal.emit(self.task_id)  # Emit task_id instead of task_name
 
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -128,8 +133,7 @@ class TaskMonitorWidget(QWidget):
             self.close_button.setVisible(True)
             self.timer.stop()
 
-    def stop_task(self):
-        self.stop_task_signal.emit(self.task_name)
+
 
     def close_task(self):
         self.close()   
@@ -139,7 +143,7 @@ def check_validity_thread(account_queue, result_queue, status_queue):
         login, row = account_queue.get()
         try:
             # Симуляция проверки валидности
-            time.sleep(random.uniform(1, 10))
+            time.sleep(random.uniform(10, 60))
             valid_status = random.choice(["Валид", "Невалид"])
 
             result_queue.put((login, valid_status, row))
@@ -482,19 +486,26 @@ class MainWindow(QMainWindow):
 
             print(f"{num_accounts} аккаунтов добавлены в таблицу {table_name}")
 
+
     def run_task(self):
         selected_task = self.task_combo.currentText()
         current_table = self.tab_widget.currentWidget()
         if current_table:
             selected_items = current_table.selectedItems()
             if selected_items:
+                # Check if any selected account is already "In Progress"
+                selected_rows = list(set(item.row() for item in selected_items))
+                for row in selected_rows:
+                    if current_table.item(row, 4) and current_table.item(row, 4).text() == "В работе":
+                        QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
+                        return
+
                 if selected_task == "Проверка валидности":
                     self.check_validity(current_table, selected_items)
                 elif selected_task == "Парсинг аудитории":
                     self.parse_audience(current_table, selected_items)
                 elif selected_task == "Рассылка сообщений":
                     self.send_messages(current_table, selected_items)
-
 
 
 
@@ -510,11 +521,12 @@ class MainWindow(QMainWindow):
 
         if total_accounts == 0:
             return
+        task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
         task_name = f"Validation Check ({table_name})"
-        task_widget = TaskMonitorWidget(task_name, total_accounts)
-        task_widget.stop_task_signal.connect(lambda: self.stop_task(task_name))
+        task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table)  # Pass table here
+        task_widget.stop_task_signal.connect(lambda: self.stop_task(task_id))
         self.stats_layout.addWidget(task_widget)
-        self.tasks[task_name] = task_widget
+        self.tasks[task_id] = task_widget
         task_widget.rows = selected_rows  # Associate rows with the task
 
         process_count = min(10, (total_accounts + 99) // 100)
@@ -534,35 +546,39 @@ class MainWindow(QMainWindow):
             p.start()
 
         task_widget.processes = processes  # Associate processes with the task_widget
-        self.monitor_validity_processes(processes, result_queue, status_queue, table_name, table, task_name)
+        self.monitor_validity_processes(processes, result_queue, status_queue, table_name, table, task_id)
         print("Проверка валидности аккаунтов запущена")
     
+
     def stop_task(self, task_name):
         task_widget = self.tasks.get(task_name)
         if task_widget:
             task_widget.update_status(0, 0, "Остановлен")
             self.terminate_validity_check(task_name)
-    
-    def terminate_validity_check(self, task_name):
-        if task_name in self.tasks:
-            task = self.tasks[task_name]
+
+    def terminate_validity_check(self, task_id):
+        if task_id in self.tasks:
+            task = self.tasks[task_id]
             if hasattr(task, 'processes') and task.processes:
                 for process in task.processes:
                     if process.is_alive():
                         process.terminate()
                         process.join()
-                print(f"All processes for task {task_name} have been terminated.")
+                print(f"All processes for task {task.task_name} have been terminated.")
                 
                 # Update account status to 'Остановлен'
                 for row in task.rows:
-                    if self.tab_widget.currentWidget().item(row, 4).text() == "В работе":  # Assuming `tab_widget` is the correct reference
-                        self.tab_widget.currentWidget().setItem(row, 4, QTableWidgetItem("Остановлен"))
-                        self.set_row_color(self.tab_widget.currentWidget(), row, QColor(220,220,250))
-                        print(f"Account {self.tab_widget.currentWidget().item(row, 0).text()} status set to 'Остановлен'")
+                    if task.table.item(row, 4).text() == "В работе":  # Use task.table instead of self.tab_widget.currentWidget()
+                        task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
+                        self.set_row_color(task.table, row, QColor(220,220,250))
+                        print(f"Account {task.table.item(row, 0).text()} status set to 'Остановлен'")
             else:
-                print(f"No processes found for task {task_name}.")
+                print(f"No processes found for task {task.task_name}.")
         else:
-            print(f"Task {task_name} not found.")
+            print(f"Task {task_id} not found.")
+            
+            
+            
     def monitor_validity_processes(self, processes, result_queue, status_queue, table_name, table, task_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
