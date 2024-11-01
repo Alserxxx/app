@@ -59,9 +59,14 @@ class TaskMonitorWidget(QWidget):
             self.task_label = QLabel(f"Задача: {self.task_name}")
             self.valid_label = QLabel(f"Валидные: {self.valid_count}")
             self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
+            
         if 'Audience' in self.task_name:
             self.task_label = QLabel(f"Задача: {self.task_name} Запись в [ {self.group_name} ]")
             self.processed_label = QLabel(f"Обработано: {self.processed_count}")
+            
+        if 'Direct' in self.task_name:
+            self.task_label = QLabel(f"Задача: {self.task_name} [ {self.group_name} ]")
+            self.processed_label = QLabel(f"Кол-во доставленных сообщений: {self.processed_count}")
 
         self.status_label = QLabel("Статус: В процессе")
         self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
@@ -88,7 +93,11 @@ class TaskMonitorWidget(QWidget):
         if 'Audience' in self.task_name:
             layout.addWidget(self.processed_label)
             self.processed_label.setStyleSheet(label_style)
-
+            
+        if 'Direct' in self.task_name:
+            layout.addWidget(self.processed_label)
+            self.processed_label.setStyleSheet(label_style)
+            
         layout.addWidget(self.time_label)
         layout.addWidget(self.stop_button)
         layout.addWidget(self.close_button)
@@ -125,24 +134,27 @@ class TaskMonitorWidget(QWidget):
 
     def update_status(self, valid_count, invalid_count, processed_count, status):
 
-        
-        print(self.task_name)
-        if 'Validation Check' in self.task_name:
-            self.valid_count += valid_count
-            self.invalid_count += invalid_count
-            self.valid_label.setText(f"Валидные: {self.valid_count}")
-            self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
-        elif 'Audience Parsing' in self.task_name:
-            self.processed_count += processed_count
-            self.processed_label.setText(f"Обработано: {self.processed_count}")
+        try:
+            #print(self.task_name)
+            if 'Validation Check' in self.task_name:
+                self.valid_count += valid_count
+                self.invalid_count += invalid_count
+                self.valid_label.setText(f"Валидные: {self.valid_count}")
+                self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
+            elif 'Audience Parsing' in self.task_name:
+                self.processed_count += processed_count
+                self.processed_label.setText(f"Обработано: {self.processed_count}")
+            elif 'Direct' in self.task_name:
+                self.processed_count += processed_count
+                self.processed_label.setText(f"Доставленных сообщений: {self.processed_count}")
+            self.status_label.setText(f"Статус: {status}")
 
-        self.status_label.setText(f"Статус: {status}")
-
-        if status in ["Завершен", "Остановлен"]:
-            self.stop_button.setVisible(False)
-            self.close_button.setVisible(True)
-            self.timer.stop()
-
+            if status in ["Завершен", "Остановлен"]:
+                self.stop_button.setVisible(False)
+                self.close_button.setVisible(True)
+                self.timer.stop()
+        except:
+            print('ERROR BLA')
     def close_task(self):
         self.close()
         
@@ -225,6 +237,66 @@ def process_audience_function(account_list, table_name, group_name,  result_queu
 
     for thread in threads:
         thread.join()
+
+
+def direct_thread(account_queue, result_queue, status_queue, group_name, proxy_group, listUserIdQueue, message_for_direct,limit_input):
+    while not account_queue.empty():
+        login, row = account_queue.get()
+        
+        print('limit_input: '+str(limit_input))
+
+        
+        try:
+            if listUserIdQueue.empty():
+                print('Закончились все пользователи в группе аудитории')
+                result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+                continue
+                
+            else:
+                usernameParsing = listUserIdQueue.get()
+                print('idDirect: '+usernameParsing)
+        except:
+            print('PIXES N')
+            
+        try:
+            for _ in range(5):
+                time.sleep(random.uniform(1, 10))
+
+                user_ids = []
+                user_ids.append(usernameParsing)
+                result_queue.put((login, group_name, user_ids, row))
+                
+                
+            result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+
+            
+        except Exception as e:
+            print(f"Error in thread for login {login}: {e}")
+        finally:
+            account_queue.task_done()
+
+def process_direct_function(account_list, table_name, group_name,  result_queue, status_queue, proxy_group, threadsx, listUserIdQueue,  message_for_direct, limit_input):
+    account_queue = Queue()
+    for account in account_list:
+        account_queue.put(account)
+
+    threads = []
+    for _ in range(threadsx):  # 100 потоков
+        thread = threading.Thread(target=direct_thread, args=(account_queue, result_queue, status_queue, group_name, proxy_group, listUserIdQueue, message_for_direct, limit_input))
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+
+
+
+
+
+
+
+
 
 
 class MainWindow(QMainWindow):
@@ -865,9 +937,7 @@ class MainWindow(QMainWindow):
                     self.threads_input.setValue(config.get('threads', 10))
                     self.limit_input.setValue(config.get('limit_input', 10))         
                     self.existing_group_combo.setCurrentText(config.get('existing_group_combo', ''))
-                    self.combo_box.setCurrentText(config.get('combo_box', ''))
-                    self.new_group_input.setText(config.get('new_group_input', ''))
-                    self.message_for_direct.setPlainText(config.get('listUsername', ''))
+                    self.message_for_direct.setPlainText(config.get('message_for_direct', ''))
 
             except:
                 none = ''
@@ -901,9 +971,7 @@ class MainWindow(QMainWindow):
                     self.threads_input.setValue(config.get('threads', 10))
                     self.limit_input.setValue(config.get('limit_input', 10))
                     self.existing_group_combo.setCurrentText(config.get('existing_group_combo', ''))
-                    self.combo_box.setCurrentText(config.get('combo_box', ''))
-                    self.new_group_input.setText(config.get('new_group_input', ''))    
-                    self.message_for_direct.setPlainText(config.get('listUsername', ''))
+                    self.message_for_direct.setPlainText(config.get('message_for_direct', ''))
             except FileNotFoundError:
                 pass
         def saveConfigButton_direct(self):
@@ -913,9 +981,7 @@ class MainWindow(QMainWindow):
             threads = self.threads_input.value()
             limit_input = self.limit_input.value()
             existing_group_combo = self.existing_group_combo.currentText()
-            combo_box = self.combo_box.currentText()
-            new_group_input = self.new_group_input.text()         
-            listUsername = self.message_for_direct.toPlainText()
+            message_for_direct = self.message_for_direct.toPlainText()
 
             try:
                 with open('configsDirect.json', 'r') as f:
@@ -929,23 +995,15 @@ class MainWindow(QMainWindow):
                 'threads': threads,
                 'limit_input': limit_input,
                 'existing_group_combo': existing_group_combo,
-                'combo_box': combo_box,
-                'new_group_input': new_group_input,     
-                'listUsername': listUsername
+                'message_for_direct': message_for_direct
             }
 
             with open('configsDirect.json', 'w') as f:
                 json.dump(configs, f)
         def save_and_start_direct(self,dialog):
             
-            if self.combo_box.currentIndex() == 0:  # Создать новую группу
-                group_name = self.new_group_input.text()
-            else:  # Использовать существующую группу
-                group_name = self.existing_group_combo.currentText()
-                
-            if not group_name:
-                QMessageBox.warning(self, "Ошибка", "Название группы не задано.")
-                return
+            group_name = self.existing_group_combo.currentText()
+
                 
             config_name = self.config_name_input.text()
             proxy_group = self.proxy_group_dropdown.currentText()
@@ -953,9 +1011,7 @@ class MainWindow(QMainWindow):
             threads = self.threads_input.value()
             limit_input = self.limit_input.value()
             existing_group_combo = self.existing_group_combo.currentText()
-            combo_box = self.combo_box.currentText()
-            new_group_input = self.new_group_input.text()  
-            listUsername = self.message_for_direct.toPlainText()
+            message_for_direct = self.message_for_direct.toPlainText()
 
             try:
                 with open('configsDirect.json', 'r') as f:
@@ -969,15 +1025,13 @@ class MainWindow(QMainWindow):
                 'threads': threads,
                 'limit_input': limit_input,
                 'existing_group_combo': existing_group_combo,
-                'combo_box': combo_box,
-                'new_group_input': new_group_input,   
-                'listUsername': listUsername
+                'message_for_direct': message_for_direct
 
             }
 
             with open('configsDirect.json', 'w') as f:
                 json.dump(configs, f)
-            self.open_check_parsing_dialog.accept()  
+            self.open_check_direct_dialog.accept()  
             current_table = self.tab_widget.currentWidget()
             if current_table:
                 selected_items = current_table.selectedItems()
@@ -993,7 +1047,7 @@ class MainWindow(QMainWindow):
                             QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
                             return
         
-                    self.parse_audience(current_table, selected_items, proxy_group, processes, threads, listUsername, limit_input,group_name)
+                    self.direct_message(current_table, selected_items, proxy_group, processes, threads, message_for_direct, limit_input,group_name)
 
 
     def load_proxy_groups(self):
@@ -1129,6 +1183,7 @@ class MainWindow(QMainWindow):
             self.audience_table.removeRow(index.row())
             
     def terminate_audience_task(self, task_id):
+        print('terminate_audience_task')
         if task_id in self.tasks:
             task = self.tasks[task_id]
             if hasattr(task, 'processes') and task.processes:
@@ -1140,7 +1195,7 @@ class MainWindow(QMainWindow):
                 
                 # Update account status to 'Остановлен'
                 for row in task.rows:
-                    if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
+                    if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text() or "Отправил" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
                         task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
                         self.set_row_color(task.table, row, QColor(220,220,250))
                         print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
@@ -1151,6 +1206,8 @@ class MainWindow(QMainWindow):
     
              
     def stop_task(self, task_id):
+        print('stop_task')
+
         task_widget = self.tasks.get(task_id)
         if task_widget:
             task_widget.update_status(0,0,0, "Остановлен")
@@ -1235,14 +1292,17 @@ class MainWindow(QMainWindow):
                     color = QColor(220,220,250)
                 elif status_text == "Закончил парсинг":
                     color = QColor(220,220,250)
+                elif status_text == "Закончил рассылку":
+                    color = QColor(220,220,250)
                 else:
                     color = QColor(250,250,140) #
+                    
         if color is not None:
             for col in range(table.columnCount()):
                 table.item(row, col).setBackground(color)
 
     def load_audience_data(self):
-        query = "SELECT group_name, COUNT(user_id), SUM(CASE WHEN status = 'пройден' THEN 1 ELSE 0 END) FROM audience_users GROUP BY group_name"
+        query = "SELECT group_name, COUNT(user_id), SUM(CASE WHEN status = 'Пройден' THEN 1 ELSE 0 END) FROM audience_users GROUP BY group_name"
         self.cursor.execute(query)
         rows = self.cursor.fetchall()
         self.audience_table.setRowCount(len(rows))
@@ -1506,7 +1566,8 @@ class MainWindow(QMainWindow):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             table_updates = []
-            collected_users = 0
+            collected_users = 0         
+
             user_count = 0
             processed_rows = set()  # Keep track of processed rows to avoid double counting
 
@@ -1561,10 +1622,164 @@ class MainWindow(QMainWindow):
 
 
 
+    def direct_message(self, table, items, proxy_group, processesx, threads, message_for_direct, limit_input,group_name):
+        table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
+        selected_rows = list(set(item.row() for item in items))
+        total_accounts = len(selected_rows)
+        processes = []
+        result_queue = multiprocessing.Queue()
+        status_queue = multiprocessing.Queue()
+
+
+        task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
+        task_name = f"Direct Message ({table_name})"
+        task_widget = TaskMonitorWidget(task_name, total_accounts, task_id, table, group_name)  # Pass table and group_name here
+
+        task_widget.stop_task_signal.connect(lambda: self.stop_task(task_id))
+        self.stats_layout.addWidget(task_widget)
+        self.tasks[task_id] = task_widget
+        task_widget.rows = selected_rows  # Associate rows with the task
+
+        process_count = min(processesx, (total_accounts + 99) // 100)
+        accounts_per_process = (total_accounts + process_count - 1) // process_count
+
+        print(f"Starting {process_count} processes with {accounts_per_process} accounts each.")
+        
+        
+        def get_new_users_from_group(group_name):
+            conn = sqlite3.connect('total.db')
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM audience_users WHERE status = 'Новый' AND group_name = ?", (group_name,))
+            users = cursor.fetchall()
+            conn.close()
+            return [user[0] for user in users]
+            
+            
+        listUserIdQueue = multiprocessing.Queue()  
+        account_listId = get_new_users_from_group(group_name)
+        for accountId in account_listId:
+            listUserIdQueue.put(accountId)
+            print('APPEND:'+str(accountId))
+            
+            
+            
+        for i in range(0, total_accounts, accounts_per_process):
+            chunk = selected_rows[i:i + accounts_per_process]
+            login_list = [table.item(row, 0).text() for row in chunk]
+            row_list = chunk
+            for row in chunk:
+                table.setItem(row, 4, QTableWidgetItem("В работе"))
+                self.set_row_color(table, row, QColor(250,250,140))
+            p = multiprocessing.Process(target=process_direct_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue, status_queue, proxy_group, threads, listUserIdQueue, message_for_direct, limit_input))
+
+            processes.append(p)
+            p.start()
+
+        task_widget.processes = processes  # Associate processes with the task_widget
+        self.monitor_direct_processes(processes, result_queue, status_queue, table_name, table, task_id,group_name)
+        print("Рассылка запущена")
+    
+    def monitor_direct_processes(self, processes, result_queue, status_queue, table_name, table, task_name,group_name):
+        def check_results(task_name):
+            conn = sqlite3.connect('total.db')
+            cursor = conn.cursor()
+            table_updates = []
+            collected_users = 0
+            user_count = 0
+            messages_sent = 0
+            processed_rows = set()  # Keep track of processed rows to avoid double counting
+
+            while not result_queue.empty():
+                login, status_acc, user_ids, row = result_queue.get()
+                print(login)
+                print(status_acc)
+
+  
+                if row in processed_rows:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
+
+                user_count = len(user_ids)  # Подсчет количества пользователей
+                table_updates.append((row, user_count))
+                processed_rows.add(row)  # Mark row as processed
+
+                for user_id in user_ids:
+                    cursor.execute("UPDATE audience_users SET status = 'Пройден' WHERE user_id = ?", (user_id,))
+                print('table_name: '+table_name)    
+                cursor.execute("UPDATE "+table_name+" SET messages_sent = messages_sent + ? WHERE login = ?", (user_count, login,))
+                self.update_audiencefordirect_table((group_name, user_count, row, table_name))
+
+                cursor.execute("SELECT messages_sent FROM " + table_name + " WHERE login = ?", (login,))
+
+                result = cursor.fetchone()
+                if result:
+                    messages_sent = result[0]
+                    print('messages_sent'+str(messages_sent))
+                    messages_sent = str(messages_sent)
+                else:
+                    messages_sent = 'error'
+            conn.commit()
+            conn.close()
+
+            for row, user_count in table_updates:
+                print(table_updates)
+                if 'Закончил рассылку' in status_acc:
+                    table.setItem(row, 4, QTableWidgetItem('Закончил рассылку'))
+                    table.setItem(row, 5, QTableWidgetItem(messages_sent))
+
+                    self.set_row_color(table, row)  
+                else:
+                    table.setItem(row, 4, QTableWidgetItem('Отправил: '+str(user_count)+' сообщений'))
+
+                    table.setItem(row, 5, QTableWidgetItem(messages_sent))
+                    self.set_row_color(table, row)
+            print('test1')
+            task_widget = self.tasks[task_name]
+            print('test2')
+
+            task_widget.update_status(0, 0, user_count, "В работе")  # Обновление статуса с учетом количества пользователей
+            print('test3')
+            try:
+                for p in processes:
+                    
+                    if p.is_alive():
+                        QTimer.singleShot(100, partial(check_results, task_name))
+                        return
+                print('test4')
+            except:
+                print('VAIOSJDn DOSAJ')
+            task_widget.update_status(0, 0, user_count, "Завершен")
+
+            print("Рассылка завершена")
+
+        QTimer.singleShot(100, partial(check_results, task_name))
 
     
     
-    
+    def update_audiencefordirect_table(self, result):
+        group_name, user_count, row, table_name = result
+        print('1update_audiencefordirect_table ['+group_name+']')
+        # Проверить, существует ли группа уже в таблице
+        rows = self.audience_table.rowCount()
+        group_row = -1
+        for row in range(rows):
+            print('self.audience_table.item(row, 0).text(): '+self.audience_table.item(row, 0).text()+'')
+            if self.audience_table.item(row, 0).text() == group_name:
+                group_row = row
+                break
+                
+                
+        print('2update_audiencefordirect_table')
+
+        current_count = int(self.audience_table.item(group_row, 2).text())
+        new_count = current_count + user_count
+        print('new_count:'+str(new_count))
+        self.audience_table.setItem(group_row, 2, QTableWidgetItem(str(new_count)))
+            
+        print(f"Updated group {group_name} with {user_count} ready users")
+
+        # Вызов функции обновления пользовательского интерфейса после добавления группы
+        self.audience_table.viewport().update()
     
     
     
@@ -1596,51 +1811,9 @@ class MainWindow(QMainWindow):
 
         # Вызов функции обновления пользовательского интерфейса после добавления группы
         self.audience_table.viewport().update()
-    def send_messages(self, table, items):
-        selected_rows = set(item.row() for item in items)
-        processes = []
-        for row in selected_rows:
-            status_item = table.item(row, 4)
-            if status_item and status_item.text() == "В работе":
-                continue  # Пропустить аккаунты, которые уже в работе
-            table.setItem(row, 4, QTableWidgetItem("В работе"))
-            self.set_row_color(table, row)
-            login = table.item(row, 0).text()
-            p = multiprocessing.Process(target=self.message_task, args=(login, row, self.tab_widget.tabText(self.tab_widget.indexOf(table))))
-            processes.append(p)
-            p.start()
-        for p in processes:
-            p.join()
-        print("Рассылка сообщений выполнена")
+    
+    
 
-    def message_task(self, login, row, table_name):
-        time.sleep(random.randint(30, 60))  # Симуляция рассылки сообщений
-        conn = sqlite3.connect(self.db_filename)
-        cursor = conn.cursor()
-        group_name = f"Group_{login}"
-        query = "UPDATE audience_users SET status = 'пройден' WHERE group_name = ?"
-        cursor.execute(query, (group_name,))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        current_table = self.tab_widget.findChild(QTableWidget, table_name)
-        current_table.setItem(row, 4, QTableWidgetItem("Готово"))
-        self.set_row_color(current_table, row)
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
     def table_context_menu(self, pos, table):
