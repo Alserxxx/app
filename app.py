@@ -49,11 +49,11 @@ class TaskMonitorWidget(QWidget):
         layout.setAlignment(Qt.AlignTop)
 
         label_style = """
-        background: #F2FCFD;
-        border: 1px solid #00796b;
-        padding: 5px;
-        color: #004d40;
+        QLabel { 
+            color: black;
+        }        
         """
+
         if 'Validation Check' in self.task_name:
 
             self.task_label = QLabel(f"Задача: {self.task_name}")
@@ -101,8 +101,19 @@ class TaskMonitorWidget(QWidget):
         self.time_label.setStyleSheet(label_style)
 
         container_widget = QWidget()
+        container_widget.setObjectName('div1')
+
         container_widget.setLayout(layout)
-        container_widget.setStyleSheet("border: 5px solid #00796b; max-height: 250px;")
+        container_widgetStyle = """
+        #div1 { 
+            border: 2px solid black;
+            border-radius: 5px;
+            max-height: 250px;
+            background: white;
+        }        
+        """
+        container_widget.setStyleSheet(container_widgetStyle)
+        #container_widget.setStyleSheet("border: 5px solid #00796b; max-height: 250px;")
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(container_widget)
@@ -251,15 +262,7 @@ class MainWindow(QMainWindow):
         self.load_accounts_btn.clicked.connect(self.load_accounts)
         self.main_layout.addWidget(self.load_accounts_btn)
 
-        # Кнопка "Запустить задачу"
-        self.run_task_btn = QPushButton("Запустить задачу")
-        self.run_task_btn.clicked.connect(self.run_task)
-        self.main_layout.addWidget(self.run_task_btn)
 
-        # Выпадающий список для выбора задачи
-        self.task_combo = QComboBox()
-        self.task_combo.addItems(["Рассылка сообщений"])
-        self.main_layout.addWidget(self.task_combo)
 
         # New Button "Проверка валидности"
         self.check_validity_btn = QPushButton("Проверка валидности")
@@ -270,6 +273,12 @@ class MainWindow(QMainWindow):
         self.parsing_btn = QPushButton("Парсинг аудитории")
         self.parsing_btn.clicked.connect(self.open_check_parsing_dialog)
         self.main_layout.addWidget(self.parsing_btn)
+        
+        
+        # New Button "Рассылка"
+        self.direct_btn = QPushButton("Рассылка")
+        self.direct_btn.clicked.connect(self.open_check_direct_dialog)
+        self.main_layout.addWidget(self.direct_btn)
         
         # Кнопка "Заполнить таблицу"
         self.fill_table_btn = QPushButton("Заполнить таблицу")
@@ -342,20 +351,22 @@ class MainWindow(QMainWindow):
     if True: #VALIDITY   
         
         def open_check_validity_dialog(self):
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Проверка валидности")
+
+            self.open_check_validity_dialog = QDialog(self)
+            self.open_check_validity_dialog.setWindowTitle("Проверка валидности")  
+            
             layout = QVBoxLayout()
 
             # Proxy group dropdown
             self.status_label = QLabel("Выберите прокси для этой задачи")
-            self.proxy_group_dropdown = QComboBox(dialog)
+            self.proxy_group_dropdown = QComboBox(self.open_check_validity_dialog)
             self.load_proxy_groups_into_dropdown()
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
 
             # Number of processes input
             self.status_label = QLabel("Кол-во процессов")
-            self.processes_input = QSpinBox(dialog)
+            self.processes_input = QSpinBox(self.open_check_validity_dialog)
             self.processes_input.setRange(1, 100)
             self.processes_input.setValue(10)
             layout.addWidget(self.status_label)
@@ -363,7 +374,7 @@ class MainWindow(QMainWindow):
 
             # Number of threads input
             self.status_label = QLabel("Кол-во потоков")
-            self.threads_input = QSpinBox(dialog)
+            self.threads_input = QSpinBox(self.open_check_validity_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
             layout.addWidget(self.status_label)
@@ -371,31 +382,31 @@ class MainWindow(QMainWindow):
 
             # Config name input
             self.status_label = QLabel("Сохранить конфиг?")
-            self.config_name_input = QLineEdit(dialog)
+            self.config_name_input = QLineEdit(self.open_check_validity_dialog)
             self.config_name_input.setPlaceholderText("Название конфига")
             layout.addWidget(self.status_label)
             layout.addWidget(self.config_name_input)
             # Load config button
-            save_config_button = QPushButton("Сохранить конфиг", dialog)
+            save_config_button = QPushButton("Сохранить конфиг", self.open_check_validity_dialog)
             save_config_button.clicked.connect(self.saveConfigButton)
             layout.addWidget(save_config_button)
 
             # Config dropdown
             self.status_label = QLabel("Выберите конфиг для его загрузки")
 
-            self.config_dropdown = QComboBox(dialog)
+            self.config_dropdown = QComboBox(self.open_check_validity_dialog)
             self.load_configs_into_dropdown()
             layout.addWidget(self.status_label)
 
             layout.addWidget(self.config_dropdown)
 
             # Load config button
-            load_config_button = QPushButton("Загрузить конфиг", dialog)
+            load_config_button = QPushButton("Загрузить конфиг", self.open_check_validity_dialog)
             load_config_button.clicked.connect(self.load_config)
             layout.addWidget(load_config_button)
 
             # OK button
-            ok_button = QPushButton("OK", dialog)
+            ok_button = QPushButton("OK", self.open_check_validity_dialog)
             ok_button.clicked.connect(self.save_and_start_validation)
             layout.addWidget(ok_button)
             
@@ -409,8 +420,8 @@ class MainWindow(QMainWindow):
             except:
                 none = ''
                 
-            dialog.setLayout(layout)
-            dialog.exec_()
+            self.open_check_validity_dialog.setLayout(layout)
+            self.open_check_validity_dialog.exec_()
 
 
 
@@ -475,10 +486,14 @@ class MainWindow(QMainWindow):
 
             with open('configsValidity.json', 'w') as f:
                 json.dump(configs, f)
-            selected_task = self.task_combo.currentText()
+            self.open_check_validity_dialog.accept()    
+                
             current_table = self.tab_widget.currentWidget()
             if current_table:
                 selected_items = current_table.selectedItems()
+                if len(selected_items) == 0:
+                    QMessageBox.warning(self, "Ошибка", "Не выбраны аккаунты")
+                    return
                 if selected_items:
                     # Check if any selected account is already "In Progress"
                     selected_rows = list(set(item.row() for item in selected_items))
@@ -494,13 +509,14 @@ class MainWindow(QMainWindow):
         
     if True: #PARSING    
         def open_check_parsing_dialog(self):
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Парсинг")
+
+            self.open_check_parsing_dialog = QDialog(self)
+            self.open_check_parsing_dialog.setWindowTitle("Парсинг")
             layout = QVBoxLayout()
 
             # Proxy group dropdown
             self.status_label = QLabel("Выберите прокси для этой задачи")
-            self.proxy_group_dropdown = QComboBox(dialog)
+            self.proxy_group_dropdown = QComboBox(self.open_check_parsing_dialog)
             self.load_proxy_groups_into_dropdown()
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
@@ -511,7 +527,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.list_username_for_parsing)
             
             self.status_label = QLabel("Лимит сбора с каждого Username")
-            self.limit_input = QSpinBox(dialog)
+            self.limit_input = QSpinBox(self.open_check_parsing_dialog)
             self.limit_input.setRange(1, 99999999)
             self.limit_input.setValue(1000)
             layout.addWidget(self.status_label)
@@ -543,7 +559,7 @@ class MainWindow(QMainWindow):
                     
             # Number of processes input
             self.status_label = QLabel("Кол-во процессов")
-            self.processes_input = QSpinBox(dialog)
+            self.processes_input = QSpinBox(self.open_check_parsing_dialog)
             self.processes_input.setRange(1, 100)
             self.processes_input.setValue(10)
             layout.addWidget(self.status_label)
@@ -551,7 +567,7 @@ class MainWindow(QMainWindow):
 
             # Number of threads input
             self.status_label = QLabel("Кол-во потоков")
-            self.threads_input = QSpinBox(dialog)
+            self.threads_input = QSpinBox(self.open_check_parsing_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
             layout.addWidget(self.status_label)
@@ -559,31 +575,31 @@ class MainWindow(QMainWindow):
 
             # Config name input
             self.status_label = QLabel("Сохранить конфиг?")
-            self.config_name_input = QLineEdit(dialog)
+            self.config_name_input = QLineEdit(self.open_check_parsing_dialog)
             self.config_name_input.setPlaceholderText("Название конфига")
             layout.addWidget(self.status_label)
             layout.addWidget(self.config_name_input)
             # Load config button
-            save_config_button = QPushButton("Сохранить конфиг", dialog)
+            save_config_button = QPushButton("Сохранить конфиг", self.open_check_parsing_dialog)
             save_config_button.clicked.connect(self.saveConfigButton_parsing)
             layout.addWidget(save_config_button)
 
             # Config dropdown
             self.status_label = QLabel("Выберите конфиг для его загрузки")
 
-            self.config_dropdown = QComboBox(dialog)
+            self.config_dropdown = QComboBox(self.open_check_parsing_dialog)
             self.load_configs_into_dropdown_parsing()
             layout.addWidget(self.status_label)
 
             layout.addWidget(self.config_dropdown)
 
             # Load config button
-            load_config_button = QPushButton("Загрузить конфиг", dialog)
+            load_config_button = QPushButton("Загрузить конфиг", self.open_check_parsing_dialog)
             load_config_button.clicked.connect(self.load_config_parsing)
             layout.addWidget(load_config_button)
 
             # OK button
-            ok_button = QPushButton("OK", dialog)
+            ok_button = QPushButton("OK", self.open_check_parsing_dialog)
             ok_button.clicked.connect(self.save_and_start_parsing)
             layout.addWidget(ok_button)
             
@@ -603,8 +619,8 @@ class MainWindow(QMainWindow):
             except:
                 none = ''
                 
-            dialog.setLayout(layout)
-            dialog.exec_()
+            self.open_check_parsing_dialog.setLayout(layout)
+            self.open_check_parsing_dialog.exec_()
 
         def on_combobox_changed(self, index):
             if index == 0:  # Создать новую группу
@@ -726,14 +742,252 @@ class MainWindow(QMainWindow):
 
             with open('configsParsing.json', 'w') as f:
                 json.dump(configs, f)
-                
-            selected_task = self.task_combo.currentText()
+            self.open_check_parsing_dialog.accept()  
             current_table = self.tab_widget.currentWidget()
             if current_table:
                 selected_items = current_table.selectedItems()
+                if len(selected_items) == 0:
+                    QMessageBox.warning(self, "Ошибка", "Не выбраны аккаунты")
+                    return
                 if selected_items:
                     # Check if any selected account is already "In Progress"
                     selected_rows = list(set(item.row() for item in selected_items))
+
+                    for row in selected_rows:
+                        if current_table.item(row, 4) and current_table.item(row, 4).text() == "В работе":
+                            QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
+                            return
+        
+                    self.parse_audience(current_table, selected_items, proxy_group, processes, threads, listUsername, limit_input,group_name)
+
+    if True: #DIRECT    
+        def open_check_direct_dialog(self):
+
+            self.open_check_direct_dialog = QDialog(self)
+            self.open_check_direct_dialog.setWindowTitle("Рассылка")
+            layout = QVBoxLayout()
+
+            # Proxy group dropdown
+            self.status_label = QLabel("Выберите прокси для этой задачи")
+            self.proxy_group_dropdown = QComboBox(self.open_check_direct_dialog)
+            self.load_proxy_groups_into_dropdown()
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.proxy_group_dropdown)
+            
+            self.status_label = QLabel("Введите шаблон сообщения")
+            self.message_for_direct = QTextEdit()
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.message_for_direct)
+            
+            self.status_label = QLabel("Лимит отправки сообщений за запуск")
+            self.limit_input = QSpinBox(self.open_check_direct_dialog)
+            self.limit_input.setRange(1, 1000)
+            self.limit_input.setValue(20)
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.limit_input)
+            
+            
+            
+            self.status_label = QLabel("Выберите группу аудитории для рссылки")
+            self.existing_group_combo = QComboBox()
+            self.existing_group_combo.clear()
+            query = "SELECT DISTINCT group_name FROM audience_users"
+            self.cursor.execute(query)
+            existing_groups = [row[0] for row in self.cursor.fetchall()]
+          
+            if existing_groups:
+                self.existing_group_combo.addItems(existing_groups)
+            else:
+                QMessageBox.warning(self, "Ошибка", "Нет существующих групп аудиторий.")
+                self.existing_group_combo.addItems([''])
+                
+                
+                
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.existing_group_combo)
+
+
+
+                    
+                    
+            # Number of processes input
+            self.status_label = QLabel("Кол-во процессов")
+            self.processes_input = QSpinBox(self.open_check_direct_dialog)
+            self.processes_input.setRange(1, 100)
+            self.processes_input.setValue(10)
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.processes_input)
+
+            # Number of threads input
+            self.status_label = QLabel("Кол-во потоков")
+            self.threads_input = QSpinBox(self.open_check_direct_dialog)
+            self.threads_input.setRange(1, 100)
+            self.threads_input.setValue(10)
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.threads_input)
+
+            # Config name input
+            self.status_label = QLabel("Сохранить конфиг?")
+            self.config_name_input = QLineEdit(self.open_check_direct_dialog)
+            self.config_name_input.setPlaceholderText("Название конфига")
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.config_name_input)
+            # Load config button
+            save_config_button = QPushButton("Сохранить конфиг", self.open_check_direct_dialog)
+            save_config_button.clicked.connect(self.saveConfigButton_direct)
+            layout.addWidget(save_config_button)
+
+            # Config dropdown
+            self.status_label = QLabel("Выберите конфиг для его загрузки")
+
+            self.config_dropdown = QComboBox(self.open_check_direct_dialog)
+            self.load_configs_into_dropdown_direct()
+            layout.addWidget(self.status_label)
+
+            layout.addWidget(self.config_dropdown)
+
+            # Load config button
+            load_config_button = QPushButton("Загрузить конфиг", self.open_check_direct_dialog)
+            load_config_button.clicked.connect(self.load_config_direct)
+            layout.addWidget(load_config_button)
+
+            # OK button
+            ok_button = QPushButton("OK", self.open_check_direct_dialog)
+            ok_button.clicked.connect(self.save_and_start_direct)
+            layout.addWidget(ok_button)
+            
+            try:
+                with open('configsDirect.json', 'r') as f:
+                    configs = json.load(f)
+                    config = configs.get('DEFAULT', {})
+                    self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                    self.processes_input.setValue(config.get('processes', 10))
+                    self.threads_input.setValue(config.get('threads', 10))
+                    self.limit_input.setValue(config.get('limit_input', 10))         
+                    self.existing_group_combo.setCurrentText(config.get('existing_group_combo', ''))
+                    self.combo_box.setCurrentText(config.get('combo_box', ''))
+                    self.new_group_input.setText(config.get('new_group_input', ''))
+                    self.message_for_direct.setPlainText(config.get('listUsername', ''))
+
+            except:
+                none = ''
+                
+            self.open_check_direct_dialog.setLayout(layout)
+            self.open_check_direct_dialog.exec_()
+
+
+
+
+                
+                
+        def load_configs_into_dropdown_direct(self):
+            # Load saved configs from a file or database
+            # For simplicity, using a file here
+            try:
+                with open('configsDirect.json', 'r') as f:
+                    configs = json.load(f)
+                    self.config_dropdown.addItems(configs.keys())
+            except:
+                none = ''
+
+        def load_config_direct(self):
+            config_name = self.config_dropdown.currentText()
+            try:
+                with open('configsDirect.json', 'r') as f:
+                    configs = json.load(f)
+                    config = configs.get(config_name, {})
+                    self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                    self.processes_input.setValue(config.get('processes', 10))
+                    self.threads_input.setValue(config.get('threads', 10))
+                    self.limit_input.setValue(config.get('limit_input', 10))
+                    self.existing_group_combo.setCurrentText(config.get('existing_group_combo', ''))
+                    self.combo_box.setCurrentText(config.get('combo_box', ''))
+                    self.new_group_input.setText(config.get('new_group_input', ''))    
+                    self.message_for_direct.setPlainText(config.get('listUsername', ''))
+            except FileNotFoundError:
+                pass
+        def saveConfigButton_direct(self):
+            config_name = self.config_name_input.text()
+            proxy_group = self.proxy_group_dropdown.currentText()
+            processes = self.processes_input.value()
+            threads = self.threads_input.value()
+            limit_input = self.limit_input.value()
+            existing_group_combo = self.existing_group_combo.currentText()
+            combo_box = self.combo_box.currentText()
+            new_group_input = self.new_group_input.text()         
+            listUsername = self.message_for_direct.toPlainText()
+
+            try:
+                with open('configsDirect.json', 'r') as f:
+                    configs = json.load(f)
+            except FileNotFoundError:
+                configs = {}
+
+            configs[config_name] = {
+                'proxy_group': proxy_group,
+                'processes': processes,
+                'threads': threads,
+                'limit_input': limit_input,
+                'existing_group_combo': existing_group_combo,
+                'combo_box': combo_box,
+                'new_group_input': new_group_input,     
+                'listUsername': listUsername
+            }
+
+            with open('configsDirect.json', 'w') as f:
+                json.dump(configs, f)
+        def save_and_start_direct(self,dialog):
+            
+            if self.combo_box.currentIndex() == 0:  # Создать новую группу
+                group_name = self.new_group_input.text()
+            else:  # Использовать существующую группу
+                group_name = self.existing_group_combo.currentText()
+                
+            if not group_name:
+                QMessageBox.warning(self, "Ошибка", "Название группы не задано.")
+                return
+                
+            config_name = self.config_name_input.text()
+            proxy_group = self.proxy_group_dropdown.currentText()
+            processes = self.processes_input.value()
+            threads = self.threads_input.value()
+            limit_input = self.limit_input.value()
+            existing_group_combo = self.existing_group_combo.currentText()
+            combo_box = self.combo_box.currentText()
+            new_group_input = self.new_group_input.text()  
+            listUsername = self.message_for_direct.toPlainText()
+
+            try:
+                with open('configsDirect.json', 'r') as f:
+                    configs = json.load(f)
+            except FileNotFoundError:
+                configs = {}
+
+            configs['DEFAULT'] = {
+                'proxy_group': proxy_group,
+                'processes': processes,
+                'threads': threads,
+                'limit_input': limit_input,
+                'existing_group_combo': existing_group_combo,
+                'combo_box': combo_box,
+                'new_group_input': new_group_input,   
+                'listUsername': listUsername
+
+            }
+
+            with open('configsDirect.json', 'w') as f:
+                json.dump(configs, f)
+            self.open_check_parsing_dialog.accept()  
+            current_table = self.tab_widget.currentWidget()
+            if current_table:
+                selected_items = current_table.selectedItems()
+                if len(selected_items) == 0:
+                    QMessageBox.warning(self, "Ошибка", "Не выбраны аккаунты")
+                    return
+                if selected_items:
+                    # Check if any selected account is already "In Progress"
+                    selected_rows = list(set(item.row() for item in selected_items))
+
                     for row in selected_rows:
                         if current_table.item(row, 4) and current_table.item(row, 4).text() == "В работе":
                             QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
@@ -874,8 +1128,33 @@ class MainWindow(QMainWindow):
             # Удалить строку из таблицы
             self.audience_table.removeRow(index.row())
             
-            
-            
+    def terminate_audience_task(self, task_id):
+        if task_id in self.tasks:
+            task = self.tasks[task_id]
+            if hasattr(task, 'processes') and task.processes:
+                for process in task.processes:
+                    if process.is_alive():
+                        process.terminate()
+                        process.join()
+                print(f"All processes for task {task.task_name} have been terminated.")
+                
+                # Update account status to 'Остановлен'
+                for row in task.rows:
+                    if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
+                        task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
+                        self.set_row_color(task.table, row, QColor(220,220,250))
+                        print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
+            else:
+                print(f"No processes found for task {task.task_name}.")
+        else:
+            print(f"Task {task_id} not found.")
+    
+             
+    def stop_task(self, task_id):
+        task_widget = self.tasks.get(task_id)
+        if task_widget:
+            task_widget.update_status(0,0,0, "Остановлен")
+            self.terminate_audience_task(task_id)     
             
     def create_audience_table(self):
         query = """
@@ -1056,22 +1335,7 @@ class MainWindow(QMainWindow):
             print(f"{num_accounts} аккаунтов добавлены в таблицу {table_name}")
 
 
-    def run_task(self):
-        selected_task = self.task_combo.currentText()
-        current_table = self.tab_widget.currentWidget()
-        if current_table:
-            selected_items = current_table.selectedItems()
-            if selected_items:
-                # Check if any selected account is already "In Progress"
-                selected_rows = list(set(item.row() for item in selected_items))
-                for row in selected_rows:
-                    if current_table.item(row, 4) and current_table.item(row, 4).text() == "В работе":
-                        QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
-                        return
 
-
-                if selected_task == "Рассылка сообщений":
-                    self.send_messages(current_table, selected_items)
 
 
 
@@ -1113,37 +1377,7 @@ class MainWindow(QMainWindow):
         task_widget.processes = processes  # Associate processes with the task_widget
         self.monitor_validity_processes(processes, result_queue, status_queue, table_name, table, task_id)
         print("Проверка валидности аккаунтов запущена")
-    
-
-    def stop_task(self, task_id):
-        task_widget = self.tasks.get(task_id)
-        if task_widget:
-            task_widget.update_status(0,0,0, "Остановлен")
-            self.terminate_audience_task(task_id)
-
-    def terminate_audience_task(self, task_id):
-        if task_id in self.tasks:
-            task = self.tasks[task_id]
-            if hasattr(task, 'processes') and task.processes:
-                for process in task.processes:
-                    if process.is_alive():
-                        process.terminate()
-                        process.join()
-                print(f"All processes for task {task.task_name} have been terminated.")
-                
-                # Update account status to 'Остановлен'
-                for row in task.rows:
-                    if task.table.item(row, 4).text() == "В работе":
-                        task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
-                        self.set_row_color(task.table, row, QColor(220,220,250))
-                        print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
-            else:
-                print(f"No processes found for task {task.task_name}.")
-        else:
-            print(f"Task {task_id} not found.")
-            
-            
-            
+              
     def monitor_validity_processes(self, processes, result_queue, status_queue, table_name, table, task_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
@@ -1212,6 +1446,10 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(100, partial(check_results, task_name))    
     
+    
+    
+    
+    
     def parse_audience(self, table, items, proxy_group, processesx, threads, listUsername, limit_input,group_name):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         selected_rows = list(set(item.row() for item in items))
@@ -1263,9 +1501,6 @@ class MainWindow(QMainWindow):
         self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id,group_name)
         print("Парсинг аудитории запущен")
     
-    
-
-
     def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_name,group_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
@@ -1324,36 +1559,9 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(100, partial(check_results, task_name))
 
-    
-    
-    def stop_task(self, task_id):
-        task_widget = self.tasks.get(task_id)
-        if task_widget:
-            task_widget.update_status(0,0,0, "Остановлен")
-            self.terminate_audience_task(task_id)
 
-    def terminate_audience_task(self, task_id):
-        if task_id in self.tasks:
-            task = self.tasks[task_id]
-            if hasattr(task, 'processes') and task.processes:
-                for process in task.processes:
-                    if process.is_alive():
-                        process.terminate()
-                        process.join()
-                print(f"All processes for task {task.task_name} have been terminated.")
-                
-                # Update account status to 'Остановлен'
-                for row in task.rows:
-                    if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
-                        task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
-                        self.set_row_color(task.table, row, QColor(220,220,250))
-                        print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
-            else:
-                print(f"No processes found for task {task.task_name}.")
-        else:
-            print(f"Task {task_id} not found.")
-    
-    
+
+
     
     
     
@@ -1418,6 +1626,22 @@ class MainWindow(QMainWindow):
         current_table = self.tab_widget.findChild(QTableWidget, table_name)
         current_table.setItem(row, 4, QTableWidgetItem("Готово"))
         self.set_row_color(current_table, row)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     def table_context_menu(self, pos, table):
         menu = QMenu()
