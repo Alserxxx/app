@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
     QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox,QTextEdit
 )
-from PyQt5.QtGui import QColor,QStandardItemModel
+from PyQt5.QtGui import QColor,QStandardItemModel,QCursor
 
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
@@ -486,7 +486,7 @@ class MainWindow(QMainWindow):
         self.create_audience_table()  # Создание таблицы аудитории
         self.load_tables()  # Загрузка всех существующих таблиц при старте приложения
         self.load_audience_data()  # Загрузка данных таблицы аудитории
-
+        self.auto_update_threads = {}
     def initUI(self):
         self.main_layout = QVBoxLayout()  # Основной компоновщик
 
@@ -585,11 +585,21 @@ class MainWindow(QMainWindow):
         self.audience_table.customContextMenuRequested.connect(self.show_audience_context_menu)
         self.load_proxy_groups()
     def show_proxy_context_menu(self, position):
-        context_menu = QMenu()
+        menu = QMenu()
+
         delete_action = QAction("Удалить выбранные группы прокси", self)
         delete_action.triggered.connect(self.delete_selected_proxy_groups)
-        context_menu.addAction(delete_action)
-        context_menu.exec_(self.proxy_table.viewport().mapToGlobal(position))
+        menu.addAction(delete_action)
+
+        enable_auto_update_action = QAction("Включить автообновление по ссылке", menu)
+        enable_auto_update_action.triggered.connect(self.enable_auto_update)
+        menu.addAction(enable_auto_update_action)
+
+        stop_auto_update_action = QAction("Остановить обновление", menu)
+        stop_auto_update_action.triggered.connect(self.stop_auto_update)
+        menu.addAction(stop_auto_update_action)
+
+        menu.exec_(self.proxy_table.viewport().mapToGlobal(position))
 
     def delete_selected_proxy_groups(self):
         selected_rows = self.proxy_table.selectionModel().selectedRows()
@@ -603,13 +613,53 @@ class MainWindow(QMainWindow):
             self.conn.commit()
 
             # Удалить строку из таблицы
-            self.proxy_table.removeRow(index.row())    
-    def load_proxy_groups_into_dropdown(self):
-        query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
-        self.cursor.execute(query)
-        groups = self.cursor.fetchall()
-        self.proxy_group_dropdown.addItems([group[0].replace("proxygroup_", "") for group in groups])   
-        
+            self.proxy_table.removeRow(index.row())
+  
+
+    def enable_auto_update(self):
+        url, ok = QInputDialog.getText(self, 'Включить автообновление', 'Введите URL для обновления:')
+        if ok:
+            frequency, ok = QInputDialog.getInt(self, 'Частота обновления', 'Введите частоту обновления (в минутах):', value=10, min=1)
+            if ok:
+                selected_groups = self.get_selected_proxy_groups()
+                for group_name in selected_groups:
+                    thread = threading.Thread(target=self.auto_update_proxies, args=(url, frequency, group_name), daemon=True)
+                    self.auto_update_threads[group_name] = thread
+                    thread.start()
+                    self.highlight_group(group_name, True)
+
+    def stop_auto_update(self):
+        selected_groups = self.get_selected_proxy_groups()
+        for group_name in selected_groups:
+            if group_name in self.auto_update_threads:
+                self.auto_update_threads[group_name].join(0)
+                del self.auto_update_threads[group_name]
+                self.highlight_group(group_name, False)
+
+    def get_selected_proxy_groups(self):
+        # Implement this method to return a list of selected proxy group names
+        return ["group1", "group2"]  # Placeholder
+
+    def highlight_group(self, group_name, enable):
+        for row in range(self.proxy_table.rowCount()):
+            item = self.proxy_table.item(row, 0)  # Assuming group name is in the first column
+            if item and item.text() == group_name:
+                if enable:
+                    item.setBackground(QColor('yellow'))
+                else:
+                    item.setBackground(QColor('white'))
+
+    def auto_update_proxies(self, url, frequency, group_name):
+        while group_name in self.auto_update_threads:
+            response = requests.get(url)
+            if response.status_code == 200:
+                proxies = response.text.splitlines()
+                self.update_proxy_group(group_name, proxies)
+            time.sleep(frequency * 60)
+
+    def update_proxy_group(self, group_name, proxies):
+        # Implement this method to update the proxy group with the new list of proxies
+        pass
     if True: #VALIDITY   
         
         def open_check_validity_dialog(self):
