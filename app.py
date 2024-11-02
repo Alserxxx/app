@@ -7,9 +7,9 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox,QTextEdit
+    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox,QTextEdit,QDialogButtonBox
 )
-from PyQt5.QtGui import QColor,QStandardItemModel
+from PyQt5.QtGui import QColor,QStandardItemModel,QCursor
 
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
@@ -26,6 +26,66 @@ import pytz
 import uuid
 import re
 import base64
+class ProxyUpdater:
+    def __init__(self):
+        self.updating_groups = {}
+
+    def start_auto_update(self, group_name, url, interval):
+        if group_name in self.updating_groups:
+            return
+        
+        stop_event = threading.Event()
+        self.updating_groups[group_name] = stop_event
+
+        def fetch_and_update_proxies():
+            while not stop_event.is_set():
+                proxies = self.fetch_proxies(url)
+                self.update_proxies(group_name, proxies)
+                time.sleep(interval)
+        
+        threading.Thread(target=fetch_and_update_proxies).start()
+
+    def stop_auto_update(self, group_name):
+        if group_name in self.updating_groups:
+            self.updating_groups[group_name].set()
+            del self.updating_groups[group_name]
+
+    def fetch_proxies(self, url):
+        response = requests.get(url)
+        return response.text.splitlines()
+
+    def update_proxies(self, group_name, proxies):
+        # Example functions to delete and add proxies, replace with actual implementation
+        self.delete_proxies(group_name)
+        self.add_proxies(group_name, proxies)
+
+    def delete_proxies(self, group_name):
+        print(f"Deleting proxies for group {group_name}")
+
+    def add_proxies(self, group_name, proxies):
+        print(f"Adding proxies for group {group_name}: {proxies}")
+
+proxy_updater = ProxyUpdater()
+
+class CustomDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Set Update Interval")
+        self.layout = QVBoxLayout()
+
+        self.input = QSpinBox()
+        self.input.setRange(1, 60)
+        self.input.setSuffix(" minutes")
+        self.layout.addWidget(self.input)
+
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.layout.addWidget(self.buttonBox)
+
+        self.setLayout(self.layout)
+
+
 
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
@@ -583,13 +643,49 @@ class MainWindow(QMainWindow):
         self.audience_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.audience_table.customContextMenuRequested.connect(self.show_audience_context_menu)
         self.load_proxy_groups()
+
     def show_proxy_context_menu(self, position):
-        context_menu = QMenu()
+        menu = QMenu()
+        
         delete_action = QAction("Удалить выбранные группы прокси", self)
         delete_action.triggered.connect(self.delete_selected_proxy_groups)
-        context_menu.addAction(delete_action)
-        context_menu.exec_(self.proxy_table.viewport().mapToGlobal(position))
+        menu.addAction(delete_action)
+        
+        enable_auto_update_action = QAction("Включить автообновление по ссылке", menu)
+        enable_auto_update_action.triggered.connect(lambda: self.enable_auto_update(position))
+        menu.addAction(enable_auto_update_action)
 
+        stop_auto_update_action = QAction("Остановить обновление", menu)
+        stop_auto_update_action.triggered.connect(lambda: self.stop_auto_update(position))
+        menu.addAction(stop_auto_update_action)
+
+        menu.exec_(QCursor.pos())
+
+    def enable_auto_update(self, position):
+        dialog = CustomDialog()
+        if dialog.exec_() == QDialog.Accepted:
+            interval = dialog.input.value() * 60  # Convert minutes to seconds
+            url, ok = QInputDialog.getText(None, "Enter URL", "URL:")
+            if ok:
+                group_name = self.get_selected_group_name(position)
+                proxy_updater.start_auto_update(group_name, url, interval)
+                # Change row color to indicate auto-updating
+                self.change_row_color(group_name, "updating")
+
+    def stop_auto_update(self, position):
+        group_name = self.get_selected_group_name(position)
+        proxy_updater.stop_auto_update(group_name)
+        # Revert row color to indicate stopping of auto-update
+        self.change_row_color(group_name, "normal")
+
+    def get_selected_group_name(self, position):
+        # Placeholder function to get the group name based on position
+        return "group_name"
+
+    def change_row_color(self, group_name, status):
+        # Placeholder function to change the row color based on the status
+        print(f"Changing color for {group_name} to {status}")
+        
     def delete_selected_proxy_groups(self):
         selected_rows = self.proxy_table.selectionModel().selectedRows()
         for index in sorted(selected_rows, reverse=True):
@@ -602,7 +698,8 @@ class MainWindow(QMainWindow):
             self.conn.commit()
 
             # Удалить строку из таблицы
-            self.proxy_table.removeRow(index.row())    
+            self.proxy_table.removeRow(index.row())
+    
     def load_proxy_groups_into_dropdown(self):
         query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
         self.cursor.execute(query)
