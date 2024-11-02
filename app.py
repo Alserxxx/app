@@ -239,28 +239,27 @@ def process_audience_function(account_list, table_name, group_name,  result_queu
         thread.join()
 
 
-def direct_thread(account_queue, result_queue, status_queue, group_name, proxy_group, listUserIdQueue, message_for_direct,limit_input):
+def direct_thread(account_queue, result_queue,  group_name, proxy_group, listUserIdQueue, message_for_direct,limit_input):
     while not account_queue.empty():
         login, row = account_queue.get()
         
         print('limit_input: '+str(limit_input))
 
         
-        try:
-            if listUserIdQueue.empty():
-                print('Закончились все пользователи в группе аудитории')
-                result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
-                continue
-                
-            else:
-                usernameParsing = listUserIdQueue.get()
-                print('idDirect: '+usernameParsing)
-        except:
-            print('PIXES N')
+        
+        if listUserIdQueue.empty():
+            print('Закончились все пользователи в группе аудитории')
+            result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+            continue
+            
+        else:
+            usernameParsing = listUserIdQueue.get()
+            print('idDirect: '+usernameParsing)
+
             
         try:
             for _ in range(5):
-                time.sleep(random.uniform(1, 10))
+                time.sleep(random.uniform(1, 1))
 
                 user_ids = []
                 user_ids.append(usernameParsing)
@@ -275,14 +274,14 @@ def direct_thread(account_queue, result_queue, status_queue, group_name, proxy_g
         finally:
             account_queue.task_done()
 
-def process_direct_function(account_list, table_name, group_name,  result_queue, status_queue, proxy_group, threadsx, listUserIdQueue,  message_for_direct, limit_input):
+def process_direct_function(account_list, table_name, group_name,  result_queue,  proxy_group, threadsx, listUserIdQueue,  message_for_direct, limit_input):
     account_queue = Queue()
     for account in account_list:
         account_queue.put(account)
 
     threads = []
     for _ in range(threadsx):  # 100 потоков
-        thread = threading.Thread(target=direct_thread, args=(account_queue, result_queue, status_queue, group_name, proxy_group, listUserIdQueue, message_for_direct, limit_input))
+        thread = threading.Thread(target=direct_thread, args=(account_queue, result_queue,  group_name, proxy_group, listUserIdQueue, message_for_direct, limit_input))
         threads.append(thread)
         thread.start()
 
@@ -1184,26 +1183,29 @@ class MainWindow(QMainWindow):
             
     def terminate_audience_task(self, task_id):
         print('terminate_audience_task')
-        if task_id in self.tasks:
-            task = self.tasks[task_id]
-            if hasattr(task, 'processes') and task.processes:
-                for process in task.processes:
-                    if process.is_alive():
-                        process.terminate()
-                        process.join()
-                print(f"All processes for task {task.task_name} have been terminated.")
-                
-                # Update account status to 'Остановлен'
-                for row in task.rows:
-                    if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text() or "Отправил" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
-                        task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
-                        self.set_row_color(task.table, row, QColor(220,220,250))
-                        print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
+        try:
+            if task_id in self.tasks:
+                task = self.tasks[task_id]
+                if hasattr(task, 'processes') and task.processes:
+                    for process in task.processes:
+                        if process.is_alive():
+                            none = ''
+                            process.terminate()
+                            process.join()
+                    print(f"All processes for task {task.task_name} have been terminated.")
+                    
+                    # Update account status to 'Остановлен'
+                    for row in task.rows:
+                        if task.table.item(row, 4).text() == "В работе" or "Собрал" in task.table.item(row, 4).text() or "Отправил" in task.table.item(row, 4).text():  # Use task.table instead of self.tab_widget.currentWidget()
+                            task.table.setItem(row, 4, QTableWidgetItem("Остановлен"))
+                            self.set_row_color(task.table, row, QColor(220,220,250))
+                            print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
+                else:
+                    print(f"No processes found for task {task.task_name}.")
             else:
-                print(f"No processes found for task {task.task_name}.")
-        else:
-            print(f"Task {task_id} not found.")
-    
+                print(f"Task {task_id} not found.")
+        except:
+            print('err terminate_audience_task')
              
     def stop_task(self, task_id):
         print('stop_task')
@@ -1628,7 +1630,6 @@ class MainWindow(QMainWindow):
         total_accounts = len(selected_rows)
         processes = []
         result_queue = multiprocessing.Queue()
-        status_queue = multiprocessing.Queue()
 
 
         task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
@@ -1659,9 +1660,9 @@ class MainWindow(QMainWindow):
         account_listId = get_new_users_from_group(group_name)
         for accountId in account_listId:
             listUserIdQueue.put(accountId)
-            print('APPEND:'+str(accountId))
             
-            
+  
+  
             
         for i in range(0, total_accounts, accounts_per_process):
             chunk = selected_rows[i:i + accounts_per_process]
@@ -1670,16 +1671,16 @@ class MainWindow(QMainWindow):
             for row in chunk:
                 table.setItem(row, 4, QTableWidgetItem("В работе"))
                 self.set_row_color(table, row, QColor(250,250,140))
-            p = multiprocessing.Process(target=process_direct_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue, status_queue, proxy_group, threads, listUserIdQueue, message_for_direct, limit_input))
+            p = multiprocessing.Process(target=process_direct_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue,  proxy_group, threads, listUserIdQueue, message_for_direct, limit_input))
 
             processes.append(p)
             p.start()
 
         task_widget.processes = processes  # Associate processes with the task_widget
-        self.monitor_direct_processes(processes, result_queue, status_queue, table_name, table, task_id,group_name)
+        self.monitor_direct_processes(processes,  result_queue,  table_name, table, task_id,group_name)
         print("Рассылка запущена")
     
-    def monitor_direct_processes(self, processes, result_queue, status_queue, table_name, table, task_name,group_name):
+    def monitor_direct_processes(self, processes,  result_queue,  table_name, table, task_name,group_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
