@@ -7,9 +7,9 @@ import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QComboBox, QTableWidget, QTabWidget, 
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
-    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox,QTextEdit,QDialogButtonBox
+    QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox,QTextEdit
 )
-from PyQt5.QtGui import QColor,QStandardItemModel,QCursor
+from PyQt5.QtGui import QColor,QStandardItemModel
 
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
@@ -26,59 +26,7 @@ import pytz
 import uuid
 import re
 import base64
-updating_groups = {}
-def enable_auto_update(self, position):
-    interval, ok = QInputDialog.getInt(self, "Set Update Interval", "Interval (minutes):", 1, 1, 60)
-    if ok:
-        interval *= 60  # Convert minutes to seconds
-        group_name = self.get_selected_group_name(position)
-        print(f"Selected group name: {group_name}")
-        url = self.get_proxy_update_url(group_name)
-        if url:
-            print(f"Update URL for {group_name}: {url}")
-            start_auto_update(group_name, url, interval)
-            # Change row color to indicate auto-updating
-            self.change_row_color(group_name, "updating")
-        else:
-            print(f"No update URL found for group {group_name}, skipping.")
-def start_auto_update(group_name, url, interval):
-    if group_name in updating_groups:
-        return
-    
-    stop_event = threading.Event()
-    updating_groups[group_name] = stop_event
 
-    def fetch_and_update_proxies(self, group_name, url, interval):
-        while not self.updating_groups[group_name].is_set():
-            proxies = self.fetch_proxies(url)
-            self.update_proxies(group_name, proxies)
-            time.sleep(interval)
-    
-    threading.Thread(target=fetch_and_update_proxies).start()
-
-
-def fetch_proxies(url):
-    response = requests.get(url)
-    return response.text.splitlines()
-
-def delete_proxies(group_name):
-    conn = sqlite3.connect('database.db')  # Replace with your database path
-    cursor = conn.cursor()
-    table_name = f"proxygroup_{group_name}"
-    cursor.execute(f"DELETE FROM {table_name}")
-    conn.commit()
-    conn.close()
-    print(f"Deleted proxies for group {group_name}")
-
-def add_proxies(group_name, proxies):
-    conn = sqlite3.connect('database.db')  # Replace with your database path
-    cursor = conn.cursor()
-    table_name = f"proxygroup_{group_name}"
-    for proxy in proxies:
-        cursor.execute(f"INSERT INTO {table_name} (proxy) VALUES (?)", (proxy,))
-    conn.commit()
-    conn.close()
-    print(f"Added proxies for group {group_name}: {proxies}")
 
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
@@ -636,67 +584,12 @@ class MainWindow(QMainWindow):
         self.audience_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.audience_table.customContextMenuRequested.connect(self.show_audience_context_menu)
         self.load_proxy_groups()
-
     def show_proxy_context_menu(self, position):
-        menu = QMenu()
-        
+        context_menu = QMenu()
         delete_action = QAction("Удалить выбранные группы прокси", self)
         delete_action.triggered.connect(self.delete_selected_proxy_groups)
-        menu.addAction(delete_action)
-        
-        enable_auto_update_action = QAction("Включить автообновление по ссылке", menu)
-        enable_auto_update_action.triggered.connect(lambda: self.enable_auto_update(position))
-        menu.addAction(enable_auto_update_action)
-
-        stop_auto_update_action = QAction("Остановить обновление", menu)
-        stop_auto_update_action.triggered.connect(lambda: self.stop_auto_update(position))
-        menu.addAction(stop_auto_update_action)
-
-        menu.exec_(QCursor.pos())
-
-    def enable_auto_update(self, position):
-        interval, ok = QInputDialog.getInt(self, "Set Update Interval", "Interval (minutes):", 1, 1, 60)
-        if ok:
-            interval *= 60  # Convert minutes to seconds
-            group_name = self.get_selected_group_name(position)
-            print(f"Selected group name: {group_name}")
-            url = self.get_proxy_update_url(group_name)
-            if url:
-                print(f"Update URL for {group_name}: {url}")
-                start_auto_update(group_name, url, interval)
-                # Change row color to indicate auto-updating
-                self.change_row_color(group_name, "updating")
-            else:
-                print(f"No update URL found for group {group_name}, skipping.")
-
-    def stop_auto_update(self, position):
-        group_name = self.get_selected_group_name(position)
-        print(f"Stopping auto-update for group: {group_name}")
-        stop_auto_update(group_name)
-        # Revert row color to indicate stopping of auto-update
-        self.change_row_color(group_name, "normal")
-
-    def get_selected_group_name(self, position):
-        selected_items = self.proxy_table.selectedItems()
-        if selected_items:
-            group_name = selected_items[0].text()
-            print(f"Group name retrieved from position {position}: {group_name}")
-            return group_name
-        print(f"No group name found at position {position}")
-        return None
-
-    def get_proxy_update_url(self, group_name):
-        rows = self.proxy_table.rowCount()
-        for row in range(rows):
-            if self.proxy_table.item(row, 0).text() == group_name:
-                url = self.proxy_table.item(row, 2).text()
-                print(f"Found URL for group {group_name} at row {row}: {url}")
-                return url
-        print(f"No URL found for group {group_name}")
-        return None
-
-    def change_row_color(self, group_name, status):
-        print(f"Changing color for {group_name} to {status}")
+        context_menu.addAction(delete_action)
+        context_menu.exec_(self.proxy_table.viewport().mapToGlobal(position))
 
     def delete_selected_proxy_groups(self):
         selected_rows = self.proxy_table.selectionModel().selectedRows()
@@ -704,12 +597,13 @@ class MainWindow(QMainWindow):
             group_name = self.proxy_table.item(index.row(), 0).text()
             table_name = f"proxygroup_{group_name}"
 
+            # Удалить группу из базы данных
             query = f"DROP TABLE IF EXISTS {table_name}"
             self.cursor.execute(query)
             self.conn.commit()
 
-            self.proxy_table.removeRow(index.row())
-    
+            # Удалить строку из таблицы
+            self.proxy_table.removeRow(index.row())    
     def load_proxy_groups_into_dropdown(self):
         query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
         self.cursor.execute(query)
