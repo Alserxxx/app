@@ -34,6 +34,63 @@ import spintax
 import secrets
 import urllib.parse
 
+import csv
+import requests
+import json
+import os
+import subprocess
+import hashlib
+import ssl
+import time
+
+SERVER_URL = "http://serveridm/"
+LICENSE_FILE = "license.json"
+
+
+
+
+
+SERVER_URL = 'http://37.230.116.31/admin_panel'
+LICENSE_FILE = 'license.json'
+
+def read_license():
+    if os.path.exists(LICENSE_FILE):
+        with open(LICENSE_FILE, 'r') as file:
+            return json.load(file)
+    return None
+
+def write_license(license_data):
+    with open(LICENSE_FILE, 'w') as file:
+        json.dump(license_data, file)
+
+def validate_license(license_key):
+    response = requests.post(SERVER_URL, data={'license_key': license_key})
+    print(response.text)
+    return response.json()
+
+def prompt_license():
+    app = QApplication([])
+    license_key, ok = QInputDialog.getText(None, 'License Key', 'Enter your license key:')
+    if ok and license_key:
+        result = validate_license(license_key)
+        print(result)
+        if result['valid']:
+            write_license(result)
+            return result
+        else:
+            QMessageBox.critical(None, 'Error', 'Invalid license key.')
+            sys.exit(1)
+    else:
+        sys.exit(1)
+
+
+
+
+
+
+
+
+
 class TaskMonitorWidget(QWidget):
     stop_task_signal = pyqtSignal(str)
 
@@ -166,7 +223,8 @@ class TaskMonitorWidget(QWidget):
                 self.stop_button.setVisible(False)
                 self.close_button.setVisible(True)
                 self.timer.stop()
-        except:
+        except Exception as e:
+            print(e)
             print('ERROR BLA')
     def close_task(self):
         self.close()
@@ -366,7 +424,9 @@ def getCookies(response, mid, csrftoken, sessionid, rur, ds_user_id, authorizati
 
     return mid, csrftoken, sessionid, rur, ds_user_id, authorization, claim
 
-
+def generate_random_string(length):
+    abc = "abcdef0123456789"
+    return ''.join(random.choice(abc) for _ in range(length))
 
 
 
@@ -556,7 +616,7 @@ def authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_drop
                 return 'BAD',login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename
   
         except Exception as exc:
-            print('[#01s63] fail connect login')
+            print('[#01s63] fail connect login ['+str(exc)+']')
             proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
             continue
             
@@ -665,61 +725,9 @@ def check_validity_thread(account_queue, result_queue, status_queue, infoUA_queu
         if device == "":
 
             android = ''.join([random.choice('abcdef0123456789') for _ in range(16)])
-            abc = "abcdef0123456789"
-            rs = ""
-            while len(rs) < 8:
-                rs += random.choice(abc)
-                VAR_PUSJ_2 = rs
+            device_id = f"{generate_random_string(8)}-{generate_random_string(1)}663-4{generate_random_string(3)}-{generate_random_string(4)}-{generate_random_string(12)}"
+            phone_id = f"{generate_random_string(8)}-{generate_random_string(4)}-4{generate_random_string(3)}-{generate_random_string(4)}-{generate_random_string(12)}"
 
-            rs = ""
-            while len(rs) < 1:
-                rs += random.choice(abc)
-                VAR_4_PUSJ_1 = rs
-
-            rs = ""
-            while len(rs) < 3:
-                rs += random.choice(abc)
-                VAR_4_PUSJ_2 = rs
-
-            rs = ""
-            while len(rs) < 4:
-                rs += random.choice(abc)
-                VAR_4_PUSJ_3 = rs
-
-            rs = ""
-            while len(rs) < 12:
-                rs += random.choice(abc)
-                VAR_PUSJ_3 = rs
-
-            device_id = f"{VAR_PUSJ_2}-{VAR_4_PUSJ_1}663-4{VAR_4_PUSJ_2}-{VAR_4_PUSJ_3}-{VAR_PUSJ_3}"
-
-
-            rs = ""
-            while len(rs) < 8:
-                rs += random.choice(abc)
-                VAR_PUSJ_2 = rs
-
-            rs = ""
-            while len(rs) < 4:
-                rs += random.choice(abc)
-                VAR_4_PUSJ_1 = rs
-
-            rs = ""
-            while len(rs) < 3:
-                rs += random.choice(abc)
-                VAR_4_PUSJ_2 = rs
-
-            rs = ""
-            while len(rs) < 4:
-                rs += random.choice(abc)
-                VAR_4_PUSJ_3 = rs
-
-            rs = ""
-            while len(rs) < 12:
-                rs += random.choice(abc)
-                VAR_PUSJ_3 = rs
-
-            phone_id = f"{VAR_PUSJ_2}-{VAR_4_PUSJ_1}-4{VAR_4_PUSJ_2}-{VAR_4_PUSJ_3}-{VAR_PUSJ_3}"
             adid_id = str(uuid.uuid4())
             infoDevice_queue.put((login, 'android-'+android+';'+phone_id+';'+device_id+';'+adid_id+'', row))
         else:
@@ -803,48 +811,263 @@ def process_function(account_list, table_name, result_queue, status_queue, infoU
     for thread in threads:
         thread.join()
 
-def audience_thread(account_queue, result_queue, status_queue, group_name, proxy_group, listUsername_queue,limit_input):
-    while not account_queue.empty():
-        login, row = account_queue.get()
-        
-        print('limit_input: '+str(limit_input))
+def audience_thread(account_queue, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, group_name, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, listUsername_queue,limit_input):
+    print('START audience_thread')
 
-        
-        
+    while not account_queue.empty():
+
+            
+        massiveAcc,row = account_queue.get()
+        login,password,device,api_ua,cookie = massiveAcc
         if listUsername_queue.empty():
-            print('Закончились Username  в списке для парсинга')
+            print('2Закончились Username  в списке для парсинга')
             result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
             continue
-            
+        print('login: '+str(login))
+        print('password: '+str(password))
+        print('device: '+str(device))
+        print('cookie: '+str(cookie))
+        print('api_ua: '+str(api_ua))
+        
+        if device == "":
+
+            android = ''.join([random.choice('abcdef0123456789') for _ in range(16)])
+            device_id = f"{generate_random_string(8)}-{generate_random_string(1)}663-4{generate_random_string(3)}-{generate_random_string(4)}-{generate_random_string(12)}"
+            phone_id = f"{generate_random_string(8)}-{generate_random_string(4)}-4{generate_random_string(3)}-{generate_random_string(4)}-{generate_random_string(12)}"
+
+            adid_id = str(uuid.uuid4())
+            infoDevice_queue.put((login, 'android-'+android+';'+phone_id+';'+device_id+';'+adid_id+'', row))
         else:
-            usernameParsing = listUsername_queue.get()
-            print('usernameParsing: '+usernameParsing)
-            
-            
+            devicelist = device.split(";")
+            android = devicelist[0]
+            phone_id = devicelist[1]
+            device_id = devicelist[2]
+            adid_id = devicelist[3] 
+        session_id = 'UFS-'+str(uuid.uuid4())+'-0'
+
+        if api_ua == "":
+            api_ua = spintax.spin('{2{5|6|7|8|9}/{1|2|3|4|5|6|7|8|9|0}.{1|2|3|4|5|6|7|8|9|0}}; {480dpi|320dpi|420dpi|380dpi|640dpi|240dpi}; {1080x1920|1080x2076|1080x1794|1440x2392|1440x2560|480x854|720x1280}; {{Nokia}; {600|600|3208 classic|3208 classic|X2-05|X2-05|C2-05|C2-05|C1-02|C1-02|C1-01|C1-01|E73 Mode|E73 Mode|8.3 5G|8.3 5G|5310 (2020)|5310 (2020)|2.3|2.3|800 Tough|800 Tough|4.2|4.2|1 Plus|1 Plus|2.2|2.2|6.2|6.2|7.2|7.2|3.2|3.2|9 PureView|9 PureView|8.1|8.1|6.1 Plus|6.1 Plus|3.1 Plus|3.1 Plus|7.1|7.1|5.1 Plus|5.1 Plus|5.1|5.1|2.1|2.1|3.1|3.1|8 Sirocco|8 Sirocco|8110 4G|8110 4G|7 Plus|7 Plus|1|1|6.1|6.1|7|7|2|2|8|8|3310 (2017)|3310 (2017)|5|5|3|3|6|6|Lumia 730 Dual Sim|Lumia 730 Dual Sim|Lumia 830|Lumia 830|Lumia 735|Lumia 735|Lumia 530|Lumia 530|X2|X2|Lumia 635|Lumia 635|Lumia 630|Lumia 630|Lumia 930|Lumia 930|X|X|XL|XL|Asha 503 DS|Asha 503 DS|Lumia 1320|Lumia 1320|Lumia 928|Lumia 928|Lumia 525|Lumia 525|Lumia 1520|Lumia 1520|Lumia 625|Lumia 625|Lumia 1020|Lumia 1020|Lumia 925|Lumia 925|Asha 205 Dual Sim|Asha 205 Dual Sim|Lumia 720|Lumia 720|Lumia 822|Lumia 822|Lumia 520|Lumia 520|Lumia 505|Lumia 505|Lumia 620|Lumia 620|Lumia 510|Lumia 510|Asha 302|Asha 302|Lumia 920|Lumia 920|Lumia 820|Lumia 820|Asha 305|Asha 305|Lumia 610|Lumia 610|808 PureView|808 PureView|Lumia 900|Lumia 900|Asha 303|Asha 303|Asha 200|Asha 200|C5-05|C5-05|101|101|Asha 300|Asha 300|Asha 201|Asha 201|Lumia 710|Lumia 710|Lumia 800|Lumia 800|603|603|C5-06|C5-06|N950|N950|701|701|500|500|700|700|C5-00 5MP|C5-00 5MP|C2-03|C2-03|C2-06|C2-06|N9|N9|Oro|Oro|X7-00|X7-00|E6-00|E6-00|C2-01|C2-01|C3-01|C3-01|E7-00|E7-00|X2-01|X2-01|C5-03|C5-03|C6-01|C6-01|C7-00|C7-00|5250|5250|X3-02|X3-02|5330 XpressMusic|5330 XpressMusic|5228|5228|C5-01|C5-01|C2-00|C2-00|X5-01|X5-01|X2-00|X2-00|N8|N8|E5-00|E5-00|C6-00|C6-00|C3-00|C3-00|C5-00|C5-00|6303i classic|6303i classic|5235 Comes With Music|5235 Comes With Music|6700 slide|6700 slide|7230|7230|5330 Mobile TV Edition|5330 Mobile TV Edition|2220 slide|2220 slide|2690|2690|3710 fold|3710 fold|1280|1280|6303 classic|6303 classic|2710 Navigation Edition|2710 Navigation Edition|6788|6788|6750 Mural|6750 Mural|7705 Twist|7705 Twist|N97 mini|N97 mini|X3-00|X3-00|X6-00|X6-00|5230|5230|6760 slide|6760 slide|6790 Surge|6790 Surge|3720 classic|3720 classic|5030 XpressRadio|5030 XpressRadio|E72|E72|5530 XpressMusic|5530 XpressMusic|6216 classic|6216 classic|7510 Supernova|7510 Supernova|5130 XpressMusic|5130 XpressMusic|8800 Gold Arte|8800 Gold Arte|2700 classic|2700 classic|6700 classic|6700 classic|2730 classic|2730 classic|2720 fold|2720 fold|7020|7020|6600i slide|6600i slide|6730 classic|6730 classic|N900|N900|5730 XpressMusic|5730 XpressMusic|6710 Navigator|6710 Navigator|6720 classic|6720 classic|E52|E52|E55|E55|E75|E75|N86 8MP|N86 8MP|N97|N97|5630 XpressMusic|5630 XpressMusic|3120 classic|3120 classic|3110 Evolve|3110 Evolve|5000|5000|2330 classic|2330 classic|6260 slide|6260 slide|7310 Supernova|7310 Supernova|8800 Sapphire Arte|8800 Sapphire Arte|8800 Carbon Arte|8800 Carbon Arte|3600 slide|3600 slide|6124 classic|6124 classic|6650 fold|6650 fold|N810 WiMAX Edition|N810 WiMAX Edition|N85|N85|E63|E63|6210 Navigator|6210 Navigator|N96|N96|N78|N78|6220 classic|6220 classic|5320 XpressMusic|5320 XpressMusic|E66|E66|N79|N79|5800 XpressMusic|5800 XpressMusic|E71|E71|3500 classic|3500 classic|3110 classic|3110 classic|6500 classic|6500 classic|8600 Luna|8600 Luna|7900 Prism|7900 Prism|6500 slide|6500 slide|5310 XpressMusic|5310 XpressMusic|8800 Arte|8800 Arte|6121 classic|6121 classic|6290|6290|N77|N77|N810|N810|N800|N800|5700 XpressMusic|5700 XpressMusic|E90 Communicator|E90 Communicator|N76|N76|N75|N75|N81 8GB|N81 8GB|N81|N81|N95 8GB|N95 8GB|N93i|N93i|6110 Navigator|6110 Navigator|E65|E65|E61i|E61i|6120 classic|6120 classic|N82|N82|E51|E51|N95|N95|6070|6070|5300 XpressMusic|5300 XpressMusic|6300|6300|8800 Sirocco Edition|8800 Sirocco Edition|E62|E62|9300i Communicator|9300i Communicator|N72|N72|N80|N80|E70|E70|E60|E60|3250|3250|E50|E50|N92|N92|N71|N71|N91 8GB|N91 8GB|N93|N93|N91|N91|5500 Sport|5500 Sport|E61|E61|N73|N73|6111|6111|6021|6021|6233|6233|770 Internet Tablet|770 Internet Tablet|6280|6280|N90|N90|6230i|6230i|8800|8800|6708|6708|3230|3230|6681|6681|6682|6682|6680|6680|9500 Communicator|9500 Communicator|9300 Communicator|9300 Communicator|N70|N70|7200|7200|6020|6020|6260|6260|6620|6620|6670|6670|N-Gage QD|N-Gage QD|7710|7710|6630|6630|7610|7610|7600|7600|3600|3600|3620|3620|3650|3650|3660|3660|N-Gage|N-Gage|6600|6600|8910i|8910i|7650|7650|3210|3210}|{HUAWEI/HONOR|Xiaomi/xiaomi|samsung|Vestel|HTC|LENOVO/Lenovo|Xiaomi|Meizu|Sony|Motorola|LeMobile/LeEco|OPPO}; {FRD-L09|Redmi Note 4|GT-I9301I|wifionly-gms|cp2dcg|Mi A1|Lenovo A2020a40|Redmi 4A|SM-N900|Redmi Note 3|MI 6|PRO 6|m3 note|MI 5|SM-G950F|SM-A310F|F3311|fleming|Le X527|SM-G920F|SM-A500F|SM-G900F|SM-G935F|R827}}; {HWFRD|mido|s3ve3g|VP74-Finlux|HTC One SC|tissot_sprout|angus3A4|rolex|ha3g|kenzo|sagit|PRO6|m3note|gemini|dreamlte|a3xelte|F3311|MZ608|le_s2_ww|zeroflte|a5lte|klte|hero2lte|R827}; {samsungexynos8895|hi3650|mt6755|h1|samsungexynos7580|samsungexynos7420|samsungexynos8890|qcom|hi3660|mt6797|universal5420}')
+            infoUA_queue.put((login, api_ua, row))
+        
+        xigcapabilities = '3brTv10='
+        xbloksversionid = '1376d33db0db05728f01e1c189d98e23eec07e6ba2479b29dfc0125f8920193e'
+        id_box = '658190018'
+        api_key = '355.1.0.44.103'
+        api_ua = 'Instagram '+api_key+' Android ('+api_ua+'; {ig_locale}; '+id_box+')'
+        proxies = ''
+        csrftoken = ''.join([random.choice('tydwpQv6kWn3GKs4bYD82caFM0') for _ in range(32)])
+
+        if cookie == "":
+            mid = ''
+            rur = ''
+            ds_user_id = ''
+            claim = ''
+            authorization = ''
+            sessionid = ''
+        else:
+            mid = re.findall('mid=(.*?);', cookie)[0]
+            rur = re.findall('rur=(.*?);', cookie)[0]
+            ds_user_id = re.findall('ds_user_id=(.*?);', cookie)[0]  
+            claim = str(re.findall('X-IG-WWW-Claim=(.*?);', cookie)[0]).rstrip().strip() 
+            authorization = re.findall('Authorization=(.*?);', cookie)[0]
+            sessionid = json.loads(base64.b64decode(authorization.split(":")[2]))['sessionid'] 
+
+        proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+        api_ua = api_ua.replace('{ig_locale}', ig_locale)
         try:
-            for _ in range(5):
-                time.sleep(random.uniform(1, 10))
+            #authorize_account
+            if cookie == "":
+                print('NO COOKIE. GO LOGIN')
+                statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = login_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
 
-                user_ids = [f"user_{i}" for i in range(random.randint(10, 100))]  # Рандомное кол-во пользователей для каждого аккаунта
-                result_queue.put((login, group_name, user_ids, row))
-                
-                
-            result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+            else: 
+                print('YES COOKIE. GO CHECK SESSION')
 
-            
+                statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
+            if statusDef == "GOOD":
+                print('ВАЛИДНЫЙ АКК, ИДЕМ ПАРСИТЬ')
+
+                infoCookie_queue.put((login, 'rur='+rur+'; mid='+mid+'; ds_user_id='+ds_user_id+'; Authorization='+authorization+'; X-IG-WWW-Claim='+claim+';', row))
+            elif statusDef == "BAD":
+                print('ДОХЛЫЙ АКК НАДО ДРУГОЙ')
+                result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                
+
         except Exception as e:
             print(f"Error in thread for login {login}: {e}")
-        finally:
+        
+        if statusDef == "GOOD":
+            print('limit_input: '+str(limit_input))
+
+            while True:
+                if listUsername_queue.empty():
+                    print('Закончились Username  в списке для парсинга')
+                    result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+                    #print('account_queue task_done')
+                    #account_queue.task_done()
+                    #continue
+
+                    #result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+
+                    break
+                    
+                    
+                    
+                else:
+                    usernameParsing = listUsername_queue.get()
+                    print('usernameParsing: '+usernameParsing)
+                
+                rank_id = str(uuid.uuid4())
+                
+                exchall = False
+                while True: #GET ID USERNAME
+                    timereal = gettimereal(timezonename)
+                    try:
+                        headers = {
+                            "x-ig-mapped-locale": ig_locale,
+                            "x-pigeon-session-id": session_id,
+                            "x-pigeon-rawclienttime": timereal,
+                            "x-ig-bandwidth-speed-kbps": "-1.000",
+                            "x-ig-bandwidth-totalbytes-b": "0",
+                            "x-ig-bandwidth-totaltime-ms": "0",
+                            "x-ig-app-startup-country": ig_locale_startup,
+                            "x-bloks-version-id": xbloksversionid,
+                            "x-ig-www-claim": claim,
+                            "x-bloks-is-layout-rtl": "false",
+                            "x-bloks-is-panorama-enabled": "true",
+                            "x-ig-device-id": device_id,
+                            "x-ig-family-device-id": phone_id,
+                            "x-ig-android-id": "android-"+android,
+                            "x-ig-timezone-offset": timezone,
+                            "x-ig-nav-chain": '8XD:self_profile:11,ProfileMediaTabFragment:self_profile:12,4DP:bottom_sheet_profile:13,6ki:settings_category_options:14,7T8:landing_facebook:15,7T8:landing_facebook:16',
+                            "x-ig-connection-type": 'WIFI',
+                            "x-ig-capabilities": xigcapabilities,
+                            "x-ig-app-id": '567067343352427',
+                            "priority": "u=3",
+                            "user-agent": api_ua,
+                            "accept-language": accept_ln,
+                            "authorization": authorization,
+                            "x-mid": mid,
+                            "ig-u-ds-user-id": ds_user_id,
+                            "ig-u-rur": rur,
+                            "ig-intended-user-id": ds_user_id,
+                            "accept-encoding": "gzip, deflate",
+                            "x-fb-http-engine": "Liger",
+                            "x-fb-client-ip": "True",
+                            "x-fb-server-cluster": "True",
+                            'Connection': 'close'
+                        }
+                        response = requests.get('https://i.instagram.com/api/v1/fbsearch/topsearch_flat/?search_surface=top_search_page&timezone_offset='+timezone+'&count=30&query='+usernameParsing+'&context=blended', headers=headers, timeout=60, proxies=proxies, verify=False)
+                        #print(response.text)
+                        if 'ip_block' in response.text or 'sentry_block' in response.text or 'an error occurred' in response.text or 'consent_data' in response.text or 'DOCTYPE html' in response.text:
+                            print('выф IP_BLOCK')
+                            proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                            continue
+                            
+                            
+                        if 'challenge_required' in response.text:
+                            exchall = True
+                            break    
+                            
+                        if '"username":"'+usernameParsing+'"' in response.text:  
+                            
+                            idParsing = re.findall('"pk_id":"(\d+)","username":"'+usernameParsing+'"', response.text)
+                            idParsing = str(idParsing[0])
+                            print('idParsing: '+str(idParsing))
+                            break
+                        else:
+                            print('не нашел айди юзера..')
+                    except Exception as exc:
+                        print('[#01s63] fail connect login ['+str(exc)+']')
+                        proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                        continue
+                
+                if exchall == True:
+                    print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
+                    listUsername_queue.put(usernameParsing)
+                    result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+
+                    break
+                    
+                next_max_idstring = '' 
+                countAll = 0
+                exchall = False
+                while True:
+                    try:
+                        response = requests.get('https://i.instagram.com/api/v1/friendships/'+idParsing+'/followers/?search_surface=follow_list_page'+next_max_idstring+'&order=default&query=&enable_groups=true&rank_token='+rank_id, headers=headers, timeout=60, proxies=proxies, verify=False)
+                        #print(response.text)
+                        
+
+                    except Exception as exc:
+                        print('[#01ss63] fail connect ['+str(exc)+']')
+                        proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                        continue 
+                        
+                    if 'challenge_required' in response.text:
+                        exchall = True
+                        break    
+                        
+                    if 'ip_block' in response.text or 'sentry_block' in response.text or 'an error occurred' in response.text or 'consent_data' in response.text or 'DOCTYPE html' in response.text:
+                        print('ммвыф IP_BLOCK')
+                        proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                        continue 
+                        
+                        
+
+                    
+                    
+                    #user_ids = json.loads(response.text)['pk_id']
+                    #user_ids = [value for key, value in data.items() if key == "pk_id"]
+                    user_ids = re.findall(r'"pk_id":\s*"?(\d+)', response.text)
+
+                    print(str(user_ids))
+                    countAll += len(user_ids)
+                    print('countAll: '+str(countAll))
+
+
+        
+                    result_queue.put((login, group_name, user_ids, row))  
+                    
+                    if countAll >= int(limit_input):
+                        break
+                        
+                    if 'next_max_id' in response.text:
+                        print('GET next_max_id')
+                        next_max_id = re.findall('"next_max_id":"(.*?)"', response.text)[0]
+                        next_max_idstring = '&max_id='+next_max_id
+                        print(next_max_idstring)
+                    else:
+                        print('NOU next_max_id')
+
+                        break     
+                      
+                if exchall == True:
+                    print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
+                    listUsername_queue.put(usernameParsing)
+                    result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+
+                    break   
+                    
+                if listUsername_queue.empty():    
+                    print('listUsername_queue пустой. Заканчиваю работу')
+
+                    result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+                    break
+                else:
+                    print('БЕРУ НОВЫЙ ЛОГИН ДЛЯ ПАРСИНГА')
+                    continue
+                    
             account_queue.task_done()
 
-def process_audience_function(account_list, table_name, group_name,  result_queue, status_queue, proxy_group, threadsx, listUsername_queue, limit_input):
+def process_audience_function(account_list, table_name, group_name,  result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, threadsx, listUsername_queue, limit_input):
     account_queue = Queue()
     for account in account_list:
         account_queue.put(account)
 
     threads = []
     for _ in range(threadsx):  # 100 потоков
-        thread = threading.Thread(target=audience_thread, args=(account_queue, result_queue, status_queue, group_name, proxy_group, listUsername_queue, limit_input))
+        print('START THREAD')
+        thread = threading.Thread(target=audience_thread, args=(account_queue, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, group_name, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, listUsername_queue, limit_input))
         threads.append(thread)
         thread.start()
 
@@ -852,49 +1075,446 @@ def process_audience_function(account_list, table_name, group_name,  result_queu
         thread.join()
 
 
-def direct_thread(account_queue, result_queue,  group_name, proxy_group, listUserIdQueue, message_for_direct,limit_input):
-    while not account_queue.empty():
-        login, row = account_queue.get()
-        
-        print('limit_input: '+str(limit_input))
+def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  group_name, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, listUserIdQueue, message_for_direct,limit_input_sleep, limit_input):
+    
+    print('START audience_thread')
 
-        
-        
+    while not account_queue.empty():
+
+            
+        massiveAcc,row = account_queue.get()
+        login,password,device,api_ua,cookie = massiveAcc
         if listUserIdQueue.empty():
-            print('Закончились все пользователи в группе аудитории')
+            print('2Закончились Username  в списке для рассылки')
             result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
             continue
-            
+        print('login: '+str(login))
+        print('password: '+str(password))
+        print('device: '+str(device))
+        print('cookie: '+str(cookie))
+        print('api_ua: '+str(api_ua))
+        
+        if device == "":
+
+            android = ''.join([random.choice('abcdef0123456789') for _ in range(16)])
+            device_id = f"{generate_random_string(8)}-{generate_random_string(1)}663-4{generate_random_string(3)}-{generate_random_string(4)}-{generate_random_string(12)}"
+            phone_id = f"{generate_random_string(8)}-{generate_random_string(4)}-4{generate_random_string(3)}-{generate_random_string(4)}-{generate_random_string(12)}"
+
+            adid_id = str(uuid.uuid4())
+            infoDevice_queue.put((login, 'android-'+android+';'+phone_id+';'+device_id+';'+adid_id+'', row))
         else:
-            usernameParsing = listUserIdQueue.get()
-            print('idDirect: '+usernameParsing)
+            devicelist = device.split(";")
+            android = devicelist[0]
+            phone_id = devicelist[1]
+            device_id = devicelist[2]
+            adid_id = devicelist[3] 
+        session_id = 'UFS-'+str(uuid.uuid4())+'-0'
 
-            
+        if api_ua == "":
+            api_ua = spintax.spin('{2{5|6|7|8|9}/{1|2|3|4|5|6|7|8|9|0}.{1|2|3|4|5|6|7|8|9|0}}; {480dpi|320dpi|420dpi|380dpi|640dpi|240dpi}; {1080x1920|1080x2076|1080x1794|1440x2392|1440x2560|480x854|720x1280}; {{Nokia}; {600|600|3208 classic|3208 classic|X2-05|X2-05|C2-05|C2-05|C1-02|C1-02|C1-01|C1-01|E73 Mode|E73 Mode|8.3 5G|8.3 5G|5310 (2020)|5310 (2020)|2.3|2.3|800 Tough|800 Tough|4.2|4.2|1 Plus|1 Plus|2.2|2.2|6.2|6.2|7.2|7.2|3.2|3.2|9 PureView|9 PureView|8.1|8.1|6.1 Plus|6.1 Plus|3.1 Plus|3.1 Plus|7.1|7.1|5.1 Plus|5.1 Plus|5.1|5.1|2.1|2.1|3.1|3.1|8 Sirocco|8 Sirocco|8110 4G|8110 4G|7 Plus|7 Plus|1|1|6.1|6.1|7|7|2|2|8|8|3310 (2017)|3310 (2017)|5|5|3|3|6|6|Lumia 730 Dual Sim|Lumia 730 Dual Sim|Lumia 830|Lumia 830|Lumia 735|Lumia 735|Lumia 530|Lumia 530|X2|X2|Lumia 635|Lumia 635|Lumia 630|Lumia 630|Lumia 930|Lumia 930|X|X|XL|XL|Asha 503 DS|Asha 503 DS|Lumia 1320|Lumia 1320|Lumia 928|Lumia 928|Lumia 525|Lumia 525|Lumia 1520|Lumia 1520|Lumia 625|Lumia 625|Lumia 1020|Lumia 1020|Lumia 925|Lumia 925|Asha 205 Dual Sim|Asha 205 Dual Sim|Lumia 720|Lumia 720|Lumia 822|Lumia 822|Lumia 520|Lumia 520|Lumia 505|Lumia 505|Lumia 620|Lumia 620|Lumia 510|Lumia 510|Asha 302|Asha 302|Lumia 920|Lumia 920|Lumia 820|Lumia 820|Asha 305|Asha 305|Lumia 610|Lumia 610|808 PureView|808 PureView|Lumia 900|Lumia 900|Asha 303|Asha 303|Asha 200|Asha 200|C5-05|C5-05|101|101|Asha 300|Asha 300|Asha 201|Asha 201|Lumia 710|Lumia 710|Lumia 800|Lumia 800|603|603|C5-06|C5-06|N950|N950|701|701|500|500|700|700|C5-00 5MP|C5-00 5MP|C2-03|C2-03|C2-06|C2-06|N9|N9|Oro|Oro|X7-00|X7-00|E6-00|E6-00|C2-01|C2-01|C3-01|C3-01|E7-00|E7-00|X2-01|X2-01|C5-03|C5-03|C6-01|C6-01|C7-00|C7-00|5250|5250|X3-02|X3-02|5330 XpressMusic|5330 XpressMusic|5228|5228|C5-01|C5-01|C2-00|C2-00|X5-01|X5-01|X2-00|X2-00|N8|N8|E5-00|E5-00|C6-00|C6-00|C3-00|C3-00|C5-00|C5-00|6303i classic|6303i classic|5235 Comes With Music|5235 Comes With Music|6700 slide|6700 slide|7230|7230|5330 Mobile TV Edition|5330 Mobile TV Edition|2220 slide|2220 slide|2690|2690|3710 fold|3710 fold|1280|1280|6303 classic|6303 classic|2710 Navigation Edition|2710 Navigation Edition|6788|6788|6750 Mural|6750 Mural|7705 Twist|7705 Twist|N97 mini|N97 mini|X3-00|X3-00|X6-00|X6-00|5230|5230|6760 slide|6760 slide|6790 Surge|6790 Surge|3720 classic|3720 classic|5030 XpressRadio|5030 XpressRadio|E72|E72|5530 XpressMusic|5530 XpressMusic|6216 classic|6216 classic|7510 Supernova|7510 Supernova|5130 XpressMusic|5130 XpressMusic|8800 Gold Arte|8800 Gold Arte|2700 classic|2700 classic|6700 classic|6700 classic|2730 classic|2730 classic|2720 fold|2720 fold|7020|7020|6600i slide|6600i slide|6730 classic|6730 classic|N900|N900|5730 XpressMusic|5730 XpressMusic|6710 Navigator|6710 Navigator|6720 classic|6720 classic|E52|E52|E55|E55|E75|E75|N86 8MP|N86 8MP|N97|N97|5630 XpressMusic|5630 XpressMusic|3120 classic|3120 classic|3110 Evolve|3110 Evolve|5000|5000|2330 classic|2330 classic|6260 slide|6260 slide|7310 Supernova|7310 Supernova|8800 Sapphire Arte|8800 Sapphire Arte|8800 Carbon Arte|8800 Carbon Arte|3600 slide|3600 slide|6124 classic|6124 classic|6650 fold|6650 fold|N810 WiMAX Edition|N810 WiMAX Edition|N85|N85|E63|E63|6210 Navigator|6210 Navigator|N96|N96|N78|N78|6220 classic|6220 classic|5320 XpressMusic|5320 XpressMusic|E66|E66|N79|N79|5800 XpressMusic|5800 XpressMusic|E71|E71|3500 classic|3500 classic|3110 classic|3110 classic|6500 classic|6500 classic|8600 Luna|8600 Luna|7900 Prism|7900 Prism|6500 slide|6500 slide|5310 XpressMusic|5310 XpressMusic|8800 Arte|8800 Arte|6121 classic|6121 classic|6290|6290|N77|N77|N810|N810|N800|N800|5700 XpressMusic|5700 XpressMusic|E90 Communicator|E90 Communicator|N76|N76|N75|N75|N81 8GB|N81 8GB|N81|N81|N95 8GB|N95 8GB|N93i|N93i|6110 Navigator|6110 Navigator|E65|E65|E61i|E61i|6120 classic|6120 classic|N82|N82|E51|E51|N95|N95|6070|6070|5300 XpressMusic|5300 XpressMusic|6300|6300|8800 Sirocco Edition|8800 Sirocco Edition|E62|E62|9300i Communicator|9300i Communicator|N72|N72|N80|N80|E70|E70|E60|E60|3250|3250|E50|E50|N92|N92|N71|N71|N91 8GB|N91 8GB|N93|N93|N91|N91|5500 Sport|5500 Sport|E61|E61|N73|N73|6111|6111|6021|6021|6233|6233|770 Internet Tablet|770 Internet Tablet|6280|6280|N90|N90|6230i|6230i|8800|8800|6708|6708|3230|3230|6681|6681|6682|6682|6680|6680|9500 Communicator|9500 Communicator|9300 Communicator|9300 Communicator|N70|N70|7200|7200|6020|6020|6260|6260|6620|6620|6670|6670|N-Gage QD|N-Gage QD|7710|7710|6630|6630|7610|7610|7600|7600|3600|3600|3620|3620|3650|3650|3660|3660|N-Gage|N-Gage|6600|6600|8910i|8910i|7650|7650|3210|3210}|{HUAWEI/HONOR|Xiaomi/xiaomi|samsung|Vestel|HTC|LENOVO/Lenovo|Xiaomi|Meizu|Sony|Motorola|LeMobile/LeEco|OPPO}; {FRD-L09|Redmi Note 4|GT-I9301I|wifionly-gms|cp2dcg|Mi A1|Lenovo A2020a40|Redmi 4A|SM-N900|Redmi Note 3|MI 6|PRO 6|m3 note|MI 5|SM-G950F|SM-A310F|F3311|fleming|Le X527|SM-G920F|SM-A500F|SM-G900F|SM-G935F|R827}}; {HWFRD|mido|s3ve3g|VP74-Finlux|HTC One SC|tissot_sprout|angus3A4|rolex|ha3g|kenzo|sagit|PRO6|m3note|gemini|dreamlte|a3xelte|F3311|MZ608|le_s2_ww|zeroflte|a5lte|klte|hero2lte|R827}; {samsungexynos8895|hi3650|mt6755|h1|samsungexynos7580|samsungexynos7420|samsungexynos8890|qcom|hi3660|mt6797|universal5420}')
+            infoUA_queue.put((login, api_ua, row))
+        
+        xigcapabilities = '3brTv10='
+        xbloksversionid = '1376d33db0db05728f01e1c189d98e23eec07e6ba2479b29dfc0125f8920193e'
+        id_box = '658190018'
+        api_key = '355.1.0.44.103'
+        api_ua = 'Instagram '+api_key+' Android ('+api_ua+'; {ig_locale}; '+id_box+')'
+        proxies = ''
+        csrftoken = ''.join([random.choice('tydwpQv6kWn3GKs4bYD82caFM0') for _ in range(32)])
+
+        if cookie == "":
+            mid = ''
+            rur = ''
+            ds_user_id = ''
+            claim = ''
+            authorization = ''
+            sessionid = ''
+        else:
+            mid = re.findall('mid=(.*?);', cookie)[0]
+            rur = re.findall('rur=(.*?);', cookie)[0]
+            ds_user_id = re.findall('ds_user_id=(.*?);', cookie)[0]  
+            claim = str(re.findall('X-IG-WWW-Claim=(.*?);', cookie)[0]).rstrip().strip() 
+            authorization = re.findall('Authorization=(.*?);', cookie)[0]
+            sessionid = json.loads(base64.b64decode(authorization.split(":")[2]))['sessionid'] 
+
+        proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+        api_ua = api_ua.replace('{ig_locale}', ig_locale)
         try:
-            for _ in range(5):
-                time.sleep(random.uniform(1, 1))
+            #authorize_account
+            if cookie == "":
+                print('NO COOKIE. GO LOGIN')
+                statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = login_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
 
-                user_ids = []
-                user_ids.append(usernameParsing)
-                result_queue.put((login, group_name, user_ids, row))
-                
-                
-            result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+            else: 
+                print('YES COOKIE. GO CHECK SESSION')
 
-            
+                statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
+            if statusDef == "GOOD":
+                print('ВАЛИДНЫЙ АКК, ИДЕМ ПАРСИТЬ')
+
+                infoCookie_queue.put((login, 'rur='+rur+'; mid='+mid+'; ds_user_id='+ds_user_id+'; Authorization='+authorization+'; X-IG-WWW-Claim='+claim+';', row))
+            elif statusDef == "BAD":
+                print('ДОХЛЫЙ АКК НАДО ДРУГОЙ')
+                result_queue.put((login, 'Невалид', 'Закончил рассылку', row))
+                
+
         except Exception as e:
             print(f"Error in thread for login {login}: {e}")
-        finally:
+        countAll = 0
+
+        if statusDef == "GOOD":
+            print('limit_input: '+str(limit_input))
+
+            while True:
+                if listUserIdQueue.empty():
+                    print('Закончились Username  в списке для парсинга')
+                    result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+                    #print('account_queue task_done')
+                    #account_queue.task_done()
+                    #continue
+
+                    #result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+
+                    break
+                    
+                    
+                    
+                else:
+                    idDirectList = []
+                    if direct_method_dropdown == "Single":
+                        idDirect = listUserIdQueue.get()
+                        idDirectList.append(idDirect)
+                        print('idDirect: '+idDirect)
+                        idDirectSend = '['+idDirect+']'
+                        idDirectSend = '[18303671817]'
+                        print('idDirectSend: '+idDirectSend)
+
+                        
+                    if direct_method_dropdown == "Group":
+                        cycGood = 0
+                        
+                        while True:
+                            
+                            print('cycGood:'+str(cycGood))
+                            if cycGood >= limit_input_group:
+                                print('cycGood limit_input_group')
+                                break
+                                
+                            idDirect = listUserIdQueue.get()
+                            exchall = False
+                            
+                            goodLi = False
+                            while True: #get_by_participants
+                                timereal = gettimereal(timezonename)
+                                try:
+                                    headers = {
+                                        "x-ig-mapped-locale": ig_locale,
+                                        "x-pigeon-session-id": session_id,
+                                        "x-pigeon-rawclienttime": timereal,
+                                        "x-ig-bandwidth-speed-kbps": "-1.000",
+                                        "x-ig-bandwidth-totalbytes-b": "0",
+                                        "x-ig-bandwidth-totaltime-ms": "0",
+                                        "x-ig-app-startup-country": ig_locale_startup,
+                                        "x-bloks-version-id": xbloksversionid,
+                                        "x-ig-www-claim": claim,
+                                        "x-bloks-is-layout-rtl": "false",
+                                        "x-bloks-is-panorama-enabled": "true",
+                                        "x-ig-device-id": device_id,
+                                        "x-ig-family-device-id": phone_id,
+                                        "x-ig-android-id": "android-"+android,
+                                        "x-ig-timezone-offset": timezone,
+                                        "x-ig-nav-chain": '8XD:self_profile:11,ProfileMediaTabFragment:self_profile:12,4DP:bottom_sheet_profile:13,6ki:settings_category_options:14,7T8:landing_facebook:15,7T8:landing_facebook:16',
+                                        "x-ig-connection-type": 'WIFI',
+                                        "x-ig-capabilities": xigcapabilities,
+                                        "x-ig-app-id": '567067343352427',
+                                        "priority": "u=3",
+                                        "user-agent": api_ua,
+                                        "accept-language": accept_ln,
+                                        "authorization": authorization,
+                                        "x-mid": mid,
+                                        "ig-u-ds-user-id": ds_user_id,
+                                        "ig-u-rur": rur,
+                                        "ig-intended-user-id": ds_user_id,
+                                        "accept-encoding": "gzip, deflate",
+                                        "x-fb-http-engine": "Liger",
+                                        "x-fb-client-ip": "True",
+                                        "x-fb-server-cluster": "True",
+                                        'Connection': 'close'
+                                    }
+                                    response = requests.get('https://i.instagram.com/api/v1/direct_v2/threads/get_by_participants/?recipient_users=['+idDirect+']&seq_id=18839&limit=20', headers=headers, timeout=60, proxies=proxies, verify=False)
+                                    print(response.text)
+                                    if 'ip_block' in response.text or 'sentry_block' in response.text or 'an error occurred' in response.text or 'consent_data' in response.text or 'DOCTYPE html' in response.text:
+                                        print('вccыф IP_BLOCK')
+                                        proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                                        continue
+                                        
+                                        
+                                    if 'challenge_required' in response.text:
+                                        exchall = True
+                                        break    
+                                        
+                                    if response.status_code == 200:  
+                                        print('goodLi true')
+                                        goodLi = True
+                                        break
+                                    else:
+                                        print('не нашел айди юзера..')
+                                        break
+                                except Exception as exc:
+                                    print('[#01s63] fail connect login ['+str(exc)+']')
+                                    proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                                    continue
+                            
+                            if goodLi == True:
+                                cycGood += 1
+                                idDirectList.append(idDirect) 
+                                
+                                
+                            if exchall == True:
+                                print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
+                                listUsername_queue.put(usernameParsing)
+                                result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+
+                                break 
+                            
+                        if exchall == True:
+                            print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
+                            listUsername_queue.put(usernameParsing)
+                            result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+
+                            break 
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+
+                            
+                            
+                            
+                        #idDirectList.append('70809640646')
+                            
+                        idDirectSend = ','.join(idDirectList)
+                        
+                        idDirectSend = '['+idDirectSend+']'
+                        print('idDirectSend: '+idDirectSend)
+
+
+
+
+
+
+
+                rank_id = str(uuid.uuid4())
+                
+
+                exchall = False
+                exspam = False
+                mutation_token = '7763347'+str(randint(127414653000,927414653000))              
+                message = spintax.spin(message_for_direct)
+                print(message)
+                
+
+
+
+                if True: #TEXT MESSAGE
+                    while True:
+                        try:
+                            timereal = gettimereal(timezonename)
+
+                            headers = {
+                            
+                        
+                            
+                                "x-ig-app-locale": ig_locale,
+                                "x-ig-device-locale": ig_locale,
+                                "x-ig-mapped-locale": ig_locale,
+                                "x-pigeon-session-id": session_id,
+                                "x-pigeon-rawclienttime": timereal,
+                                "x-ig-bandwidth-speed-kbps": "-1.000",
+                                "x-ig-bandwidth-totalbytes-b": "0",
+                                "x-ig-bandwidth-totaltime-ms": "0",
+                                "x-ig-app-startup-country": ig_locale_startup,
+                                "x-bloks-version-id": xbloksversionid,
+                                "x-ig-www-claim": claim,
+                                "x-bloks-is-layout-rtl": "false",
+                                "x-ig-device-id": device_id,
+                                "x-ig-family-device-id": phone_id,
+                                "x-ig-android-id": "android-"+android,
+                                "x-ig-timezone-offset": timezone,
+                                "x-ig-nav-chain": '8XD:self_profile:11,ProfileMediaTabFragment:self_profile:12,4DP:bottom_sheet_profile:13,6ki:settings_category_options:14,7T8:landing_facebook:15,7T8:landing_facebook:16',
+                                "x-fb-connection-type": 'WIFI',
+                                "x-ig-connection-type": 'WIFI',
+                                "x-ig-capabilities": xigcapabilities,
+                                "x-ig-app-id": '567067343352427',
+                                "priority": "u=3",
+                                "user-agent": api_ua,
+                                "accept-language": accept_ln,
+                                "authorization": authorization,
+                                "x-mid": mid,
+                                "ig-u-ds-user-id": ds_user_id,
+                                "ig-u-rur": rur,
+                                "ig-intended-user-id": ds_user_id,
+                                "accept-encoding": "gzip, deflate",
+                                "x-fb-http-engine": "Liger",
+                                "x-fb-client-ip": "True",
+                                "x-fb-server-cluster": "True",
+                                "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8",
+                                'Connection': 'close'
+                                }
+                                
+                                
+                                
+                                
+                            print('direct_methodmessage_dropdown: '+direct_methodmessage_dropdown)   
+                            if direct_methodmessage_dropdown == "Text":
+    
+                                
+                                postdata = {
+                                "recipient_users":idDirectSend,
+                                "action":"send_item",
+                                "is_shh_mode":"0",
+                                "send_attribution":"inbox_search",
+                                "client_context":mutation_token,
+                                "_csrftoken":csrftoken,
+                                "text":message,
+                                "device_id":"android-"+android,
+                                "mutation_token":mutation_token,
+                                "_uuid":device_id,
+                                "offline_threading_id":mutation_token,
+                                
+                                
+                                
+                                }
+                                response = requests.post('https://i.instagram.com/api/v1/direct_v2/threads/broadcast/text/', headers=headers, data=postdata,timeout=60, proxies=proxies, verify=False)
+                                
+                            if direct_methodmessage_dropdown == "Text+Link":
+
+                                link_url = re.findall('\\b((?:https?://)?(?:(?:www\\.)?(?:[\\da-z\\.-]+)\\.(?:[a-z]{2,6})|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:(?:[0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])))(?::[0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])?(?:/[\\w\\.-]*)*/?)\\b',message)
+                                link_url = link_url[0]
+                                #message = message.replace('\n', '\\n')
+                                print('message: '+message)
+                                postdata = {
+                                "recipient_users":idDirectSend,
+                                "link_text":message,
+                                "link_urls":'["'+link_url+'"]',
+                                "action":"send_item",
+                                "is_shh_mode":"0",
+                                "send_attribution":"inbox_search",
+                                "client_context":mutation_token,
+                                "_csrftoken":csrftoken,
+                                "device_id":"android-"+android,
+                                "mutation_token":mutation_token,
+                                "_uuid":device_id,
+                                "offline_threading_id":mutation_token,
+                                
+                                
+                                
+                                }
+                                response = requests.post('https://i.instagram.com/api/v1/direct_v2/threads/broadcast/link/', headers=headers, data=postdata,timeout=60, proxies=proxies, verify=False)
+                                
+                            
+                            
+                            
+                            print(postdata)
+                            print(response.text)
+                            
+
+                        except Exception as exc:
+                            print('[#01ss63] fail connect ['+str(exc)+']')
+                            proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                            continue 
+                            
+                        if 'challenge_required' in response.text:
+                            exchall = True
+                            break   
+                            
+                            
+                        if '"status_code":"403"' in response.text:
+                            exspam = True
+                            break   
+                            
+                            
+                        if 'ip_block' in response.text or 'sentry_block' in response.text or 'an error occurred' in response.text or 'consent_data' in response.text or 'DOCTYPE html' in response.text:
+                            print('ммвыф IP_BLOCK')
+                            proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
+                            continue 
+                        if response.status_code == 200:    
+
+
+                            countAll += 1
+                            print('countAll: '+str(countAll))
+
+
+                
+                            result_queue.put((login, group_name, idDirectList, row))  
+                            print('УСПЕШНО ОТПРАВИЛ СООБЩЕНИЕ')
+                            time.sleep(int(limit_input_sleep))
+                            break
+                        else:
+                            
+                            print('ОШИБКА ЗАПРОСА РАССЫЛКА')
+                    
+                
+                if direct_method_dropdown == "Group":
+                    if countAll >= int(limit_input_group2):
+                        print('ЛИМИТ ДОСТИГНУТ2')
+                        result_queue.put((login, 'Лимит достигнут', 'Закончил рассылку', row))
+                        break
+                        
+                        
+                if direct_method_dropdown == "Single":
+
+                    if countAll >= int(limit_input):
+                        print('ЛИМИТ ДОСТИГНУТ2')
+                        result_queue.put((login, 'Лимит достигнут', 'Закончил рассылку', row))
+
+                        break        
+                        
+                if exspam == True:
+                    print('Вставляю обратно username и беру новый акк для парсинга если есть')
+                    
+                    
+                    for idDirect in idDirectList:
+                        listUserIdQueue.put(idDirect)
+
+                    result_queue.put((login, 'Спам-блок', 'Закончил парсинг', row))
+
+                    break   
+                    
+                if exchall == True:
+                    print('Вставляю обратно username и беру новый акк для парсинга если есть')
+                    for idDirect in idDirectList:
+                        listUserIdQueue.put(idDirect)
+                        
+                    result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                    break   
+                    
+                if listUserIdQueue.empty():    
+                    print('listUserIdQueue пустой. Заканчиваю работу')
+                    for idDirect in idDirectList:
+                        listUserIdQueue.put(idDirect)
+                    result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+                    break
+                else:
+                    print('БЕРУ НОВЫЙ ЛОГИН ДЛЯ РАССЫЛКИ')
+                    continue
+                    
             account_queue.task_done()
 
-def process_direct_function(account_list, table_name, group_name,  result_queue,  proxy_group, threadsx, listUserIdQueue,  message_for_direct, limit_input):
+
+
+def process_direct_function(account_list, table_name, group_name,  result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, threadsx, listUserIdQueue,  message_for_direct,limit_input_sleep, limit_input):
     account_queue = Queue()
     for account in account_list:
         account_queue.put(account)
 
     threads = []
     for _ in range(threadsx):  # 100 потоков
-        thread = threading.Thread(target=direct_thread, args=(account_queue, result_queue,  group_name, proxy_group, listUserIdQueue, message_for_direct, limit_input))
+        thread = threading.Thread(target=direct_thread, args=(account_queue, result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  group_name, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, listUserIdQueue, message_for_direct,limit_input_sleep, limit_input))
         threads.append(thread)
         thread.start()
 
@@ -1059,7 +1679,7 @@ class MainWindow(QMainWindow):
 
     def enable_auto_update(self):
         
-        frequency, ok = QInputDialog.getInt(self, 'Частота обновления', 'Введите частоту обновления (в минутах):', value=1, min=1)
+        frequency, ok = QInputDialog.getInt(self, 'Частота обновления', 'Введите частоту обновления (в минутах):', value=5, min=1)
         if ok:
             selected_groups = self.get_selected_proxy_groups()
             for group_namex in selected_groups:
@@ -1187,8 +1807,87 @@ class MainWindow(QMainWindow):
     def load_proxy_method_manual2_into_dropdown(self):
         self.proxy_method_manual2_dropdown.addItems(["Africa/Abidjan:-968", "Africa/Accra:-968", "Africa/Addis_Ababa:10800", "Africa/Algiers:3600", "Africa/Asmara:10800", "Africa/Asmera:10800", "Africa/Bamako:-968", "Africa/Bangui:3600", "Africa/Banjul:-968", "Africa/Bissau:-3740", "Africa/Blantyre:7200", "Africa/Brazzaville:3600", "Africa/Bujumbura:7200", "Africa/Cairo:7200", "Africa/Casablanca:-1820", "Africa/Ceuta:-1276", "Africa/Conakry:-968", "Africa/Dakar:-968", "Africa/Dar_es_Salaam:10800", "Africa/Djibouti:10800", "Africa/Douala:3600", "Africa/El_Aaiun:-3168", "Africa/Freetown:-968", "Africa/Gaborone:7200", "Africa/Harare:7200", "Africa/Johannesburg:6720", "Africa/Juba:10800", "Africa/Kampala:10800", "Africa/Khartoum:10800", "Africa/Kigali:7200", "Africa/Kinshasa:3600", "Africa/Lagos:3600", "Africa/Libreville:3600", "Africa/Lome:-968", "Africa/Luanda:3600", "Africa/Lubumbashi:7200", "Africa/Lusaka:7200", "Africa/Malabo:3600", "Africa/Maputo:7200", "Africa/Maseru:6720", "Africa/Mbabane:6720", "Africa/Mogadishu:10800", "Africa/Monrovia:-2588", "Africa/Nairobi:10800", "Africa/Ndjamena:3600", "Africa/Niamey:3600", "Africa/Nouakchott:-968", "Africa/Ouagadougou:-968", "Africa/Porto-Novo:3600", "Africa/Sao_Tome:0", "Africa/Timbuktu:0", "Africa/Tripoli:3164", "Africa/Tunis:2444", "Africa/Windhoek:3600", "America/Adak:-36000", "America/Anchorage:-32400", "America/Anguilla:-14400", "America/Antigua:-14400", "America/Araguaina:-10800", "America/Argentina/Buenos_Aires:-10800", "America/Argentina/Catamarca:-10800", "America/Argentina/ComodRivadavia:-10800", "America/Argentina/Cordoba:-10800", "America/Argentina/Jujuy:-10800", "America/Argentina/La_Rioja:-10800", "America/Argentina/Mendoza:-10800", "America/Argentina/Rio_Gallegos:-10800", "America/Argentina/Salta:-10800", "America/Argentina/San_Juan:-10800", "America/Argentina/San_Luis:-10800", "America/Argentina/Tucuman:-10800", "America/Argentina/Ushuaia:-10800", "America/Aruba:-14400", "America/Asuncion:-10800", "America/Atikokan:-18000", "America/Atka:-36000", "America/Bahia:-10800", "America/Bahia_Banderas:-21600", "America/Barbados:-14309", "America/Belem:-10800", "America/Belize:-21168", "America/Blanc-Sablon:-14400", "America/Boa_Vista:-14400", "America/Bogota:-17776", "America/Boise:-25200", "America/Buenos_Aires:-10800", "America/Cambridge_Bay:-25200", "America/Campo_Grande:-13108", "America/Cancun:-18000", "America/Caracas:-14400", "America/Catamarca:-10800", "America/Cayenne:-10800", "America/Cayman:-18000", "America/Chicago:-21036", "America/Chihuahua:-25200", "America/Ciudad_Juarez:-25556", "America/Coral_Harbour:-18000", "America/Cordoba:-10800", "America/Costa_Rica:-20173", "America/Creston:-25200", "America/Cuiaba:-13460", "America/Curacao:-14400", "America/Danmarkshavn:-4480", "America/Dawson:-25200", "America/Dawson_Creek:-25200", "America/Denver:-25196", "America/Detroit:-18000", "America/Dominica:-14400", "America/Edmonton:-25200", "America/Eirunepe:-16768", "America/El_Salvador:-21408", "America/Ensenada:-28800", "America/Fortaleza:-10800", "America/Fort_Nelson:-25200", "America/Fort_Wayne:-18000", "America/Glace_Bay:-14388", "America/Godthab:-10800", "America/Goose_Bay:-14400", "America/Grand_Turk:-14400", "America/Grenada:-14400", "America/Guadeloupe:-14400", "America/Guatemala:-21600", "America/Guayaquil:-18000", "America/Guyana:-13959", "America/Halifax:-14400", "America/Havana:-18000", "America/Hermosillo:-25200", "America/Indiana/Indianapolis:-18000", "America/Indiana/Knox:-20790", "America/Indiana/Marengo:-18000", "America/Indiana/Petersburg:-18000", "America/Indiana/Tell_City:-20823", "America/Indiana/Vevay:-18000", "America/Indiana/Vincennes:-18000", "America/Indiana/Winamac:-18000", "America/Indianapolis:-18000", "America/Inuvik:-25200", "America/Iqaluit:-18000", "America/Jamaica:-18000", "America/Jujuy:-10800", "America/Juneau:-32400", "America/Kentucky/Louisville:-18000", "America/Kentucky/Monticello:-18000", "America/Knox_IN:-21600", "America/Kralendijk:-14400", "America/La_Paz:-14400", "America/Lima:-18000", "America/Los_Angeles:-28378", "America/Louisville:-18000", "America/Lower_Princes:-14400", "America/Lower_Princes:14400", "America/Maceio:-10800", "America/Managua:-20708", "America/Manaus:-14400", "America/Marigot:-14400", "America/Martinique:-14400", "America/Matamoros:-21600", "America/Mazatlan:-25200", "America/Mendoza:-10800", "America/Menominee:-21027", "America/Merida:-21508", "America/Metlakatla:-28800", "America/Mexico_City:-21600", "America/Miquelon:-10800", "America/Moncton:-14400", "America/Monterrey:-21600", "America/Montevideo:-10800", "America/Montreal:-18000", "America/Montserrat:-14400", "America/Nassau:-18000", "America/New_York:-17762", "America/Nipigon:-18000", "America/Nome:-32400", "America/Noronha:-7200", "America/North_Dakota/Beulah:-21600", "America/North_Dakota/Center:-21600", "America/North_Dakota/New_Salem:-21600", "America/Nuuk:-10800", "America/Ojinaga:-25060", "America/Panama:-18000", "America/Pangnirtung:-18000", "America/Paramaribo:-10800", "America/Phoenix:-25200", "America/Port-au-Prince:-17360", "America/Porto_Acre:-18000", "America/Porto_Velho:-14400", "America/Port_of_Spain:-14400", "America/Puerto_Rico:-14400", "America/Punta_Arenas:-10800", "America/Rainy_River:-21600", "America/Rankin_Inlet:-21600", "America/Recife:-10800", "America/Regina:-21600", "America/Resolute:-21600", "America/Rio_Branco:-16272", "America/Rosario:-10800", "America/Santarem:-10800", "America/Santa_Isabel:-28800", "America/Santiago:-10800", "America/Santo_Domingo:-14400", "America/Sao_Paulo:-10800", "America/Scoresbysund:-3600", "America/Shiprock:-25200", "America/Sitka:-32400", "America/St_Barthelemy:-14400", "America/St_Johns:-12600", "America/St_Kitts:-14400", "America/St_Lucia:-14400", "America/St_Thomas:-14400", "America/St_Vincent:-14400", "America/Swift_Current:-21600", "America/Tegucigalpa:-20932", "America/Thule:-14400", "America/Thunder_Bay:-18000", "America/Tijuana:-28084", "America/Toronto:-18000", "America/Tortola:-14400", "America/Vancouver:-28800", "America/Virgin:-14400", "America/Whitehorse:-25200", "America/Winnipeg:-21600", "America/Yakutat:-32400", "America/Yellowknife:-25200", "Antarctica/Casey:0", "Antarctica/Davis:0", "Antarctica/DumontDUrville:35320", "Antarctica/Macquarie:0", "Antarctica/Mawson:0", "Antarctica/McMurdo:41944", "Antarctica/Palmer:-10800", "Antarctica/Rothera:-10800", "Antarctica/South_Pole:43200", "Antarctica/Syowa:10800", "Antarctica/Troll:0", "Antarctica/Vostok:21020", "Arctic/Longyearbyen:3208", "Asia/Aden:10800", "Asia/Almaty:18468", "Asia/Amman:7200", "Asia/Anadyr:42596", "Asia/Aqtau:12064", "Asia/Aqtobe:13720", "Asia/Ashgabat:14012", "Asia/Ashkhabad:18000", "Asia/Atyrau:12464", "Asia/Baghdad:10660", "Asia/Bahrain:10800", "Asia/Baku:11964", "Asia/Bangkok:24124", "Asia/Barnaul:20100", "Asia/Beirut:7200", "Asia/Bishkek:17904", "Asia/Brunei:26480", "Asia/Calcutta:19800", "Asia/Chita:27232", "Asia/Choibalsan:27480", "Asia/Chongqing:28800", "Asia/Chungking:28800", "Asia/Colombo:19164", "Asia/Dacca:21600", "Asia/Damascus:7200", "Asia/Dhaka:21600", "Asia/Dili:30140", "Asia/Dubai:13272", "Asia/Dushanbe:16512", "Asia/Famagusta:7200", "Asia/Gaza:7200", "Asia/Harbin:28800", "Asia/Hebron:7200", "Asia/Hong_Kong:27402", "Asia/Hovd:21996", "Asia/Ho_Chi_Minh:25200", "Asia/Irkutsk:25025", "Asia/Istanbul:7200", "Asia/Jakarta:25200", "Asia/Jayapura:32400", "Asia/Jerusalem:7200", "Asia/Kabul:16200", "Asia/Kamchatka:38076", "Asia/Karachi:16092", "Asia/Kashgar:21600", "Asia/Kathmandu:20476", "Asia/Katmandu:20700", "Asia/Khandyga:32400", "Asia/Kolkata:19800", "Asia/Krasnoyarsk:22286", "Asia/Kuala_Lumpur:24925", "Asia/Kuching:26480", "Asia/Kuwait:10800", "Asia/Macao:28800", "Asia/Macau:27250", "Asia/Magadan:36000", "Asia/Makassar:28656", "Asia/Manila:-57360", "Asia/Muscat:13272", "Asia/Nicosia:7200", "Asia/Novokuznetsk:20928", "Asia/Novosibirsk:19900", "Asia/Omsk:17610", "Asia/Oral:12324", "Asia/Phnom_Penh:24124", "Asia/Pontianak:25200", "Asia/Pyongyang:30180", "Asia/Qatar:10800", "Asia/Qostanay:15268", "Asia/Qyzylorda:15712", "Asia/Rangoon:23400", "Asia/Riyadh87:10800", "Asia/Riyadh88:10800", "Asia/Riyadh89:10800", "Asia/Riyadh:10800", "Asia/Saigon:25200", "Asia/Sakhalin:34248", "Asia/Samarkand:16073", "Asia/Seoul:30472", "Asia/Shanghai:28800", "Asia/Singapore:24925", "Asia/Srednekolymsk:36892", "Asia/Taipei:28800", "Asia/Tashkent:16631", "Asia/Tbilisi:10751", "Asia/Tehran:12344", "Asia/Tel_Aviv:7200", "Asia/Thimbu:21600", "Asia/Thimphu:21516", "Asia/Tokyo:32400", "Asia/Tomsk:20391", "Asia/Ujung_Pandang:28800", "Asia/Ulaanbaatar:25652", "Asia/Ulan_Bator:28800", "Asia/Urumqi:21020", "Asia/Ust-Nera:34374", "Asia/Vientiane:24124", "Asia/Vladivostok:31651", "Asia/Yakutsk:31138", "Asia/Yangon:23087", "Asia/Yekaterinburg:14553", "Asia/Yerevan:10680", "Atlantic/Azores:-3600", "Atlantic/Bermuda:-14400", "Atlantic/Canary:-3696", "Atlantic/Cape_Verde:-3600", "Atlantic/Faeroe:0", "Atlantic/Faroe:-1624", "Atlantic/Jan_Mayen:3600", "Atlantic/Madeira:-4056", "Atlantic/Reykjavik:-968", "Atlantic/Reykjavik:0", "Atlantic/South_Georgia:-7200", "Atlantic/Stanley:-10800", "Atlantic/St_Helena:-968", "Australia/ACT:36000", "Australia/Adelaide:33260", "Australia/Brisbane:36000", "Australia/Broken_Hill:33948", "Australia/Canberra:36000", "Australia/Currie:36000", "Australia/Darwin:31400", "Australia/Eucla:30928", "Australia/Hobart:35356", "Australia/LHI:37800", "Australia/Lindeman:35756", "Australia/Lord_Howe:37800", "Australia/Melbourne:34792", "Australia/North:34200", "Australia/NSW:36000", "Australia/Perth:27804", "Australia/Queensland:36000", "Australia/South:34200", "Australia/Sydney:36000", "Australia/Tasmania:36000", "Australia/Victoria:36000", "Australia/West:28800", "Australia/Yancowinna:34200", "Brazil/Acre:-18000", "Brazil/DeNoronha:-7200", "Brazil/East:-10800", "Brazil/West:-14400", "Canada/Atlantic:-14400", "Canada/Central:-21600", "Canada/East-Saskatchewan:-21600", "Canada/Eastern:-18000", "Canada/Mountain:-25200", "Canada/Newfoundland:-12600", "Canada/Pacific:-28800", "Canada/Saskatchewan:-21600", "Canada/Yukon:-28800", "CET:3600", "Chile/Continental:-10800", "Chile/EasterIsland:-18000", "CST6CDT:-21600", "Cuba:-18000", "EET:7200", "Egypt:7200", "Eire:0", "EST5EDT:-18000", "EST:-18000", "Etc/GMT+0:0", "Etc/GMT+1:-3600", "Etc/GMT+2:-7200", "Etc/GMT+3:-10800", "Etc/GMT+4:-14400", "Etc/GMT+5:-18000", "Etc/GMT+6:-21600", "Etc/GMT+7:-25200", "Etc/GMT+8:-28800", "Etc/GMT+9:-32400", "Etc/GMT+10:-36000", "Etc/GMT+11:-39600", "Etc/GMT+12:-43200", "Etc/GMT-0:0", "Etc/GMT-1:3600", "Etc/GMT-2:7200", "Etc/GMT-3:10800", "Etc/GMT-4:14400", "Etc/GMT-5:18000", "Etc/GMT-6:21600", "Etc/GMT-7:25200", "Etc/GMT-8:28800", "Etc/GMT-9:32400", "Etc/GMT-10:36000", "Etc/GMT-11:39600", "Etc/GMT-12:43200", "Etc/GMT-13:46800", "Etc/GMT-14:50400", "Etc/GMT0:0", "Etc/GMT:0", "Etc/Greenwich:0", "Etc/UCT:0", "Etc/Universal:0", "Etc/UTC:0", "Etc/Zulu:0", "Europe/Amsterdam:1050", "Europe/Andorra:3600", "Europe/Astrakhan:11532", "Europe/Athens:5692", "Europe/Belfast:0", "Europe/Belgrade:3600", "Europe/Berlin:3208", "Europe/Bratislava:3464", "Europe/Brussels:1050", "Europe/Bucharest:6264", "Europe/Budapest:3600", "Europe/Busingen:2048", "Europe/Chisinau:6920", "Europe/Copenhagen:3208", "Europe/Dublin:-1521", "Europe/Gibraltar:-1284", "Europe/Guernsey:-75", "Europe/Helsinki:5989", "Europe/Isle_of_Man:-75", "Europe/Isle_of_Man:3600", "Europe/Istanbul:10800", "Europe/Jersey:-75", "Europe/Jersey:3600", "Europe/Kaliningrad:4920", "Europe/Kiev:7200", "Europe/Kirov:10800", "Europe/Kyiv:7324", "Europe/Lisbon:-2205", "Europe/Ljubljana:3600", "Europe/London:-75", "Europe/Luxembourg:1050", "Europe/Madrid:-884", "Europe/Malta:3484", "Europe/Mariehamn:5989", "Europe/Minsk:10800", "Europe/Monaco:3600", "Europe/Moscow:10800", "Europe/Nicosia:7200", "Europe/Oslo:3208", "Europe/Paris:3600", "Europe/Podgorica:3600", "Europe/Prague:3464", "Europe/Riga:5794", "Europe/Rome:2996", "Europe/Samara:12020", "Europe/San_Marino:2996", "Europe/Sarajevo:3600", "Europe/Saratov:11058", "Europe/Simferopol:10800", "Europe/Skopje:3600", "Europe/Sofia:5596", "Europe/Stockholm:3208", "Europe/Tallinn:5940", "Europe/Tirane:3600", "Europe/Tiraspol:7200", "Europe/Ulyanovsk:11616", "Europe/Uzhgorod:7200", "Europe/Vaduz:2048", "Europe/Vatican:2996", "Europe/Vienna:3600", "Europe/Vilnius:6076", "Europe/Volgograd:10660", "Europe/Warsaw:3600", "Europe/Zagreb:3600", "Europe/Zaporozhye:7200", "Europe/Zurich:2048", "Greenwich:0", "Hongkong:28800", "HST:-36000", "Iceland:0", "Indian/Antananarivo:10800", "Indian/Chagos:17380", "Indian/Christmas:24124", "Indian/Cocos:23087", "Indian/Comoro:10800", "Indian/Kerguelen:17640", "Indian/Mahe:13272", "Indian/Maldives:17640", "Indian/Mauritius:13800", "Indian/Mayotte:10800", "Indian/Reunion:13272", "Iran:12600", "Israel:7200", "Jamaica:-18000", "Japan:32400", "Kwajalein:43200", "Libya:7200", "MET:3600", "Mexico/BajaNorte:-28800", "Mexico/BajaSur:-25200", "Mexico/General:-21600", "Mideast/Riyadh87:0", "Mideast/Riyadh88:0", "Mideast/Riyadh89:0", "MST7MDT:-25200", "MST:-25200", "Navajo:0", "NZ-CHAT:45900", "NZ:43200", "Pacific/Apia:45184", "Pacific/Auckland:41944", "Pacific/Bougainville:37336", "Pacific/Chatham:44028", "Pacific/Chuuk:35320", "Pacific/Easter:-18000", "Pacific/Efate:39600", "Pacific/Enderbury:46800", "Pacific/Fakaofo:-41096", "Pacific/Fiji:42944", "Pacific/Funafuti:41524", "Pacific/Galapagos:-21504", "Pacific/Gambier:-32388", "Pacific/Guadalcanal:38388", "Pacific/Guam:-51660", "Pacific/Guam:36000", "Pacific/Honolulu:-36000", "Pacific/Johnston:-36000", "Pacific/Kanton:0", "Pacific/Kiritimati:-37760", "Pacific/Kosrae:-47284", "Pacific/Kwajalein:40160", "Pacific/Majuro:41524", "Pacific/Marquesas:-33480", "Pacific/Midway:-39600", "Pacific/Nauru:40060", "Pacific/Niue:-39600", "Pacific/Norfolk:39600", "Pacific/Noumea:39600", "Pacific/Pago_Pago:-39600", "Pacific/Palau:-54124", "Pacific/Pitcairn:-28800", "Pacific/Pohnpei:38388", "Pacific/Ponape:39600", "Pacific/Port_Moresby:35320", "Pacific/Port_Moresby:36000", "Pacific/Rarotonga:-36000", "Pacific/Saipan:-51660", "Pacific/Samoa:-39600", "Pacific/Tahiti:-35896", "Pacific/Tarawa:41524", "Pacific/Tongatapu:44352", "Pacific/Truk:36000", "Pacific/Wake:41524", "Pacific/Wallis:41524", "Pacific/Yap:36000", "Poland:3600", "Portugal:0", "PRC:0", "PST8PDT:0", "ROC:28800", "ROK:32400", "Singapore:28800", "Turkey:7200", "UCT:0", "Universal:0", "US/Alaska:-32400", "US/Aleutian:-36000", "US/Arizona:-25200", "US/Central:-21600", "US/East-Indiana:-18000", "US/Eastern:-18000", "US/Hawaii:-36000", "US/Indiana-Starke:-21600", "US/Michigan:-18000", "US/Mountain:-25200", "US/Pacific-New:-28800", "US/Pacific:-28800", "US/Samoa:-39600", "UTC:0", "W-SU:10800", "WET:0", "Zulu:0"])    
         
-        
+       
+   
+    def on_direct_method_dropdown_changed(self, index):
+        if index == 0:  #Group
+            self.limit_input_group.setVisible(True)
+            self.limit_input_group2.setVisible(True)
+            self.status_label1.setVisible(True)
+            self.status_label2.setVisible(True)
+            self.status_label3.setVisible(False)
+            self.limit_input.setVisible(False)
+            
+        elif index == 1:  #Single
+            self.limit_input_group.setVisible(False)
+            self.limit_input_group2.setVisible(False)
+            self.status_label1.setVisible(False)
+            self.status_label2.setVisible(False)
+            self.status_label3.setVisible(True)
+            self.limit_input.setVisible(True)
 
+    def on_direct_method_dropdown_changed2(self, index):
+        print(index)
+        if index == 'Group':  #Group
+            self.limit_input_group.setVisible(True)
+            self.limit_input_group2.setVisible(True)
+            self.limit_input.setVisible(False) 
+            self.status_label33.setVisible(False)
+ 
+            self.status_label11.setVisible(True)
+            self.status_label22.setVisible(True)
+
+            
+        elif index == 'Single':  #Single
+            self.limit_input_group.setVisible(False)
+            self.limit_input_group2.setVisible(False)
+            self.limit_input.setVisible(True)
+            self.status_label33.setVisible(True)
+            self.status_label11.setVisible(False)
+            self.status_label22.setVisible(False)
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+    def on_proxy_method_dropdown_changed(self, index):
+        if index == 0:  #Manual
+            self.proxy_method_manual_dropdown.setVisible(True)
+            self.proxy_method_manual2_dropdown.setVisible(True)
+            self.status_label1.setVisible(True)
+            self.status_label2.setVisible(True)
+            
+            
+        elif index == 1:  #ip-api
+            self.proxy_method_manual_dropdown.setVisible(False)
+            self.proxy_method_manual2_dropdown.setVisible(False)
+            self.status_label1.setVisible(False)
+            self.status_label2.setVisible(False)
+            
+            
+           
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
     if True: #VALIDITY   
         
         def open_check_validity_dialog(self):
@@ -1207,21 +1906,28 @@ class MainWindow(QMainWindow):
 
             # Proxy group dropdown
             self.status_label = QLabel("Откуда брать информацию об IP")
+            
             self.proxy_method_dropdown = QComboBox(self.open_check_validity_dialog)
+
             self.load_proxy_method_into_dropdown()
+            self.proxy_method_dropdown.currentIndexChanged.connect(self.on_proxy_method_dropdown_changed)
+
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_method_dropdown)
 
-            self.status_label = QLabel("Locale")
+                
+                
+                
+            self.status_label1 = QLabel("Locale")
             self.proxy_method_manual_dropdown = QComboBox(self.open_check_validity_dialog)
             self.load_proxy_method_manual_into_dropdown()
-            layout.addWidget(self.status_label)
+            layout.addWidget(self.status_label1)
             layout.addWidget(self.proxy_method_manual_dropdown)
             
-            self.status_label = QLabel("Timezone")
+            self.status_label2 = QLabel("Timezone")
             self.proxy_method_manual2_dropdown = QComboBox(self.open_check_validity_dialog)
             self.load_proxy_method_manual2_into_dropdown()
-            layout.addWidget(self.status_label)
+            layout.addWidget(self.status_label2)
             layout.addWidget(self.proxy_method_manual2_dropdown)
 
             # Number of processes input
@@ -1233,7 +1939,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.processes_input)
 
             # Number of threads input
-            self.status_label = QLabel("Кол-во потоков на процессор")
+            self.status_label = QLabel("Кол-во потоков на процесс")
             self.threads_input = QSpinBox(self.open_check_validity_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
@@ -1286,9 +1992,21 @@ class MainWindow(QMainWindow):
                     self.threads_input.setValue(config.get('threads', 10))
             except:
                 none = ''
-                
+            layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+
             self.open_check_validity_dialog.setLayout(layout)
+            
+            
             self.open_check_validity_dialog.exec_()
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1406,6 +2124,32 @@ class MainWindow(QMainWindow):
             self.load_proxy_groups_into_dropdown()
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
+
+            # Proxy group dropdown
+            self.status_label = QLabel("Откуда брать информацию об IP")
+            
+            self.proxy_method_dropdown = QComboBox(self.open_check_parsing_dialog)
+
+            self.load_proxy_method_into_dropdown()
+            self.proxy_method_dropdown.currentIndexChanged.connect(self.on_proxy_method_dropdown_changed)
+
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.proxy_method_dropdown)
+
+
+            self.status_label1 = QLabel("Locale")
+            self.proxy_method_manual_dropdown = QComboBox(self.open_check_parsing_dialog)
+            self.load_proxy_method_manual_into_dropdown()
+            layout.addWidget(self.status_label1)
+            layout.addWidget(self.proxy_method_manual_dropdown)
+            
+            self.status_label2 = QLabel("Timezone")
+            self.proxy_method_manual2_dropdown = QComboBox(self.open_check_parsing_dialog)
+            self.load_proxy_method_manual2_into_dropdown()
+            layout.addWidget(self.status_label2)
+            layout.addWidget(self.proxy_method_manual2_dropdown)
+
+
             
             self.status_label = QLabel("Введите список Username")
             self.list_username_for_parsing = QTextEdit()
@@ -1441,10 +2185,8 @@ class MainWindow(QMainWindow):
 
 
 
-                    
-                    
             # Number of processes input
-            self.status_label = QLabel("Кол-во процессов")
+            self.status_label = QLabel("Максимально кол-во процессов")
             self.processes_input = QSpinBox(self.open_check_parsing_dialog)
             self.processes_input.setRange(1, 100)
             self.processes_input.setValue(10)
@@ -1452,7 +2194,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.processes_input)
 
             # Number of threads input
-            self.status_label = QLabel("Кол-во потоков")
+            self.status_label = QLabel("Кол-во потоков на процесс")
             self.threads_input = QSpinBox(self.open_check_parsing_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
@@ -1494,6 +2236,12 @@ class MainWindow(QMainWindow):
                     configs = json.load(f)
                     config = configs.get('DEFAULT', {})
                     self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                    self.proxy_method_dropdown.setCurrentText(config.get('proxy_method_dropdown', ''))
+                    self.proxy_method_manual_dropdown.setCurrentText(config.get('proxy_method_manual_dropdown', ''))
+                    self.proxy_method_manual2_dropdown.setCurrentText(config.get('proxy_method_manual2_dropdown', ''))
+                    
+
+                    
                     self.processes_input.setValue(config.get('processes', 10))
                     self.threads_input.setValue(config.get('threads', 10))
                     self.limit_input.setValue(config.get('limit_input', 10))         
@@ -1504,7 +2252,7 @@ class MainWindow(QMainWindow):
 
             except:
                 none = ''
-                
+            layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)  
             self.open_check_parsing_dialog.setLayout(layout)
             self.open_check_parsing_dialog.exec_()
 
@@ -1548,6 +2296,11 @@ class MainWindow(QMainWindow):
                     configs = json.load(f)
                     config = configs.get(config_name, {})
                     self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                    
+                    self.proxy_method_dropdown.setCurrentText(config.get('proxy_method_dropdown', ''))
+                    self.proxy_method_manual_dropdown.setCurrentText(config.get('proxy_method_manual_dropdown', ''))
+                    self.proxy_method_manual2_dropdown.setCurrentText(config.get('proxy_method_manual2_dropdown', ''))
+
                     self.processes_input.setValue(config.get('processes', 10))
                     self.threads_input.setValue(config.get('threads', 10))
                     self.limit_input.setValue(config.get('limit_input', 10))
@@ -1560,6 +2313,17 @@ class MainWindow(QMainWindow):
         def saveConfigButton_parsing(self):
             config_name = self.config_name_input.text()
             proxy_group = self.proxy_group_dropdown.currentText()
+
+            proxy_method_dropdown = self.proxy_method_dropdown.currentText()
+            proxy_method_manual_dropdown = self.proxy_method_manual_dropdown.currentText()
+            proxy_method_manual2_dropdown = self.proxy_method_manual2_dropdown.currentText()
+
+            
+                                
+
+
+
+
             processes = self.processes_input.value()
             threads = self.threads_input.value()
             limit_input = self.limit_input.value()
@@ -1576,6 +2340,9 @@ class MainWindow(QMainWindow):
 
             configs[config_name] = {
                 'proxy_group': proxy_group,
+                'proxy_method_dropdown': proxy_method_dropdown,
+                'proxy_method_manual_dropdown': proxy_method_manual_dropdown,
+                'proxy_method_manual2_dropdown': proxy_method_manual2_dropdown,
                 'processes': processes,
                 'threads': threads,
                 'limit_input': limit_input,
@@ -1600,6 +2367,10 @@ class MainWindow(QMainWindow):
                 
             config_name = self.config_name_input.text()
             proxy_group = self.proxy_group_dropdown.currentText()
+            proxy_method_dropdown = self.proxy_method_dropdown.currentText()
+            proxy_method_manual_dropdown = self.proxy_method_manual_dropdown.currentText()
+            proxy_method_manual2_dropdown = self.proxy_method_manual2_dropdown.currentText()
+            
             processes = self.processes_input.value()
             threads = self.threads_input.value()
             limit_input = self.limit_input.value()
@@ -1616,6 +2387,9 @@ class MainWindow(QMainWindow):
 
             configs['DEFAULT'] = {
                 'proxy_group': proxy_group,
+                'proxy_method_dropdown': proxy_method_dropdown,
+                'proxy_method_manual_dropdown': proxy_method_manual_dropdown,
+                'proxy_method_manual2_dropdown': proxy_method_manual2_dropdown,
                 'processes': processes,
                 'threads': threads,
                 'limit_input': limit_input,
@@ -1643,8 +2417,9 @@ class MainWindow(QMainWindow):
                         if current_table.item(row, 5) and current_table.item(row, 5).text() == "В работе":
                             QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
                             return
-        
-                    self.parse_audience(current_table, selected_items, proxy_group, processes, threads, listUsername, limit_input,group_name)
+                    
+
+                    self.parse_audience(current_table, selected_items, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, processes, threads, listUsername, limit_input,group_name)
 
     if True: #DIRECT    
         def open_check_direct_dialog(self):
@@ -1660,17 +2435,87 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
             
+            # Proxy group dropdown
+            self.status_label = QLabel("Откуда брать информацию об IP")
+            
+            self.proxy_method_dropdown = QComboBox(self.open_check_direct_dialog)
+
+            self.load_proxy_method_into_dropdown()
+            self.proxy_method_dropdown.currentIndexChanged.connect(self.on_proxy_method_dropdown_changed)
+
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.proxy_method_dropdown)
+
+
+            self.status_label1 = QLabel("Locale")
+            self.proxy_method_manual_dropdown = QComboBox(self.open_check_direct_dialog)
+            self.load_proxy_method_manual_into_dropdown()
+            layout.addWidget(self.status_label1)
+            layout.addWidget(self.proxy_method_manual_dropdown)
+            
+            self.status_label2 = QLabel("Timezone")
+            self.proxy_method_manual2_dropdown = QComboBox(self.open_check_direct_dialog)
+            self.load_proxy_method_manual2_into_dropdown()
+            layout.addWidget(self.status_label2)
+            layout.addWidget(self.proxy_method_manual2_dropdown)
+            
+
+            
+            
             self.status_label = QLabel("Введите шаблон сообщения")
             self.message_for_direct = QTextEdit()
             layout.addWidget(self.status_label)
             layout.addWidget(self.message_for_direct)
             
-            self.status_label = QLabel("Лимит отправки сообщений за запуск")
+            
+            self.status_label = QLabel("Режим сообщения")
+            self.direct_methodmessage_dropdown = QComboBox(self.open_check_direct_dialog)
+            self.direct_methodmessage_dropdown.addItems(['Text','Text+Link']) 
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.direct_methodmessage_dropdown)
+            
+            
+            self.status_label = QLabel("Режим отправки")
+            self.direct_method_dropdown = QComboBox(self.open_check_direct_dialog)
+            self.direct_method_dropdown.addItems(['Group','Single']) 
+            layout.addWidget(self.status_label)
+            layout.addWidget(self.direct_method_dropdown)
+            
+            self.status_label11 = QLabel("Кол-во участников в группе")
+            self.limit_input_group = QSpinBox(self.open_check_direct_dialog)
+            self.limit_input_group.setRange(1, 50)
+            self.limit_input_group.setValue(5)
+            layout.addWidget(self.status_label11)
+            layout.addWidget(self.limit_input_group)            
+            
+            
+            self.status_label22 = QLabel("Лимит созданных групп за запуск")
+            self.limit_input_group2 = QSpinBox(self.open_check_direct_dialog)
+            self.limit_input_group2.setRange(1, 50)
+            self.limit_input_group2.setValue(4)
+            layout.addWidget(self.status_label22)
+            layout.addWidget(self.limit_input_group2)  
+            
+            
+            
+            
+            
+            self.status_label33 = QLabel("Лимит отправки сообщений за запуск")
             self.limit_input = QSpinBox(self.open_check_direct_dialog)
             self.limit_input.setRange(1, 1000)
             self.limit_input.setValue(20)
-            layout.addWidget(self.status_label)
+            layout.addWidget(self.status_label33)
             layout.addWidget(self.limit_input)
+            #self.direct_method_dropdown.currentIndexChanged.connect(self.on_direct_method_dropdown_changed)
+            self.direct_method_dropdown.currentTextChanged.connect(self.on_direct_method_dropdown_changed2)
+
+            self.status_label44 = QLabel("Сон между сообщениями")
+            self.limit_input_sleep = QSpinBox(self.open_check_direct_dialog)
+            self.limit_input_sleep.setRange(1, 1000)
+            self.limit_input_sleep.setValue(5)
+            layout.addWidget(self.status_label44)
+            layout.addWidget(self.limit_input_sleep)
+            
             
             
             
@@ -1741,23 +2586,64 @@ class MainWindow(QMainWindow):
             ok_button = QPushButton("OK", self.open_check_direct_dialog)
             ok_button.clicked.connect(self.save_and_start_direct)
             layout.addWidget(ok_button)
-            
+            print('LOAD DEFOLT')
             try:
                 with open('configsDirect.json', 'r') as f:
                     configs = json.load(f)
                     config = configs.get('DEFAULT', {})
                     self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                    self.proxy_method_dropdown.setCurrentText(config.get('proxy_method_dropdown', ''))
+
+                    self.proxy_method_manual_dropdown.setCurrentText(config.get('proxy_method_manual_dropdown', ''))
+                    self.proxy_method_manual2_dropdown.setCurrentText(config.get('proxy_method_manual2_dropdown', ''))
+
+                    self.limit_input_group.setValue(config.get('limit_input_group', 10))
+                    self.limit_input_group2.setValue(config.get('limit_input_group2', 10))
+                    self.limit_input.setValue(config.get('limit_input', 10))         
+
+                    self.limit_input_sleep.setValue(config.get('limit_input_sleep', 10))         
+
+                    self.direct_method_dropdown.setCurrentText(config.get('direct_method_dropdown', ''))
+                    self.direct_methodmessage_dropdown.setCurrentText(config.get('direct_methodmessage_dropdown', ''))
+
+                    
                     self.processes_input.setValue(config.get('processes', 10))
                     self.threads_input.setValue(config.get('threads', 10))
-                    self.limit_input.setValue(config.get('limit_input', 10))         
                     self.existing_group_combo.setCurrentText(config.get('existing_group_combo', ''))
                     self.message_for_direct.setPlainText(config.get('message_for_direct', ''))
 
             except:
                 none = ''
                 
+            print('LOAsD DEFOLT')
+ 
+            if self.direct_method_dropdown.currentText() == 'Group':  #Group
+                print('GRO')
+                self.limit_input_group.setVisible(True)
+                self.limit_input_group2.setVisible(True)
+
+     
+                self.status_label11.setVisible(True)
+                self.status_label22.setVisible(True)
+                self.limit_input.setVisible(False) 
+                self.status_label33.setVisible(False)
+                
+            elif self.direct_method_dropdown.currentText() == 'Single':  #Single
+                print('SING')
+
+                self.limit_input_group.setVisible(False)
+                self.limit_input_group2.setVisible(False)
+
+                self.status_label11.setVisible(False)
+                self.status_label22.setVisible(False)
+                self.limit_input.setVisible(True)
+                self.status_label33.setVisible(True)
+                
+            layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)     
             self.open_check_direct_dialog.setLayout(layout)
             self.open_check_direct_dialog.exec_()
+                
+
 
 
 
@@ -1781,9 +2667,19 @@ class MainWindow(QMainWindow):
                     configs = json.load(f)
                     config = configs.get(config_name, {})
                     self.proxy_group_dropdown.setCurrentText(config.get('proxy_group', ''))
+                    self.proxy_method_dropdown.setCurrentText(config.get('proxy_method_dropdown', ''))
+                    self.proxy_method_manual_dropdown.setCurrentText(config.get('proxy_method_manual_dropdown', ''))
+                    self.proxy_method_manual2_dropdown.setCurrentText(config.get('proxy_method_manual2_dropdown', ''))
+                    self.direct_method_dropdown.setCurrentText(config.get('direct_method_dropdown', ''))
+                    self.direct_methodmessage_dropdown.setCurrentText(config.get('direct_methodmessage_dropdown', ''))
+                    
+                    self.limit_input_group.setValue(config.get('limit_input_group', 10))
+                    self.limit_input_group2.setValue(config.get('limit_input_group2', 10))
                     self.processes_input.setValue(config.get('processes', 10))
                     self.threads_input.setValue(config.get('threads', 10))
                     self.limit_input.setValue(config.get('limit_input', 10))
+                    self.limit_input_sleep.setValue(config.get('limit_input_sleep', 10))
+
                     self.existing_group_combo.setCurrentText(config.get('existing_group_combo', ''))
                     self.message_for_direct.setPlainText(config.get('message_for_direct', ''))
             except FileNotFoundError:
@@ -1791,9 +2687,24 @@ class MainWindow(QMainWindow):
         def saveConfigButton_direct(self):
             config_name = self.config_name_input.text()
             proxy_group = self.proxy_group_dropdown.currentText()
+            proxy_method_dropdown = self.proxy_method_dropdown.currentText()
+            proxy_method_manual_dropdown = self.proxy_method_manual_dropdown.currentText()
+            proxy_method_manual2_dropdown = self.proxy_method_manual2_dropdown.currentText()
+
+            direct_method_dropdown = self.direct_method_dropdown.currentText()
+            direct_methodmessage_dropdown = self.direct_methodmessage_dropdown.currentText()
+            
+            limit_input_group = self.limit_input_group.value()
+            limit_input_group2 = self.limit_input_group2.value()
+
+
+            
+            
             processes = self.processes_input.value()
             threads = self.threads_input.value()
             limit_input = self.limit_input.value()
+            limit_input_sleep = self.limit_input_sleep.value()
+
             existing_group_combo = self.existing_group_combo.currentText()
             message_for_direct = self.message_for_direct.toPlainText()
 
@@ -1805,9 +2716,26 @@ class MainWindow(QMainWindow):
 
             configs[config_name] = {
                 'proxy_group': proxy_group,
+                'proxy_method_dropdown': proxy_method_dropdown,
+                'proxy_method_manual_dropdown': proxy_method_manual_dropdown,
+                'proxy_method_manual2_dropdown': proxy_method_manual2_dropdown,
+
+                'direct_method_dropdown': direct_method_dropdown,
+                'direct_methodmessage_dropdown': direct_methodmessage_dropdown,
+                
+                'limit_input_group': limit_input_group,
+                'limit_input_group2': limit_input_group2,
+
+                
+
+            
+            
                 'processes': processes,
                 'threads': threads,
                 'limit_input': limit_input,
+                'limit_input_sleep': limit_input_sleep,
+                                                                             
+
                 'existing_group_combo': existing_group_combo,
                 'message_for_direct': message_for_direct
             }
@@ -1821,9 +2749,18 @@ class MainWindow(QMainWindow):
                 
             config_name = self.config_name_input.text()
             proxy_group = self.proxy_group_dropdown.currentText()
+            proxy_method_dropdown = self.proxy_method_dropdown.currentText()
+            proxy_method_manual_dropdown = self.proxy_method_manual_dropdown.currentText()
+            proxy_method_manual2_dropdown = self.proxy_method_manual2_dropdown.currentText()
+            direct_method_dropdown = self.direct_method_dropdown.currentText()
+            direct_methodmessage_dropdown = self.direct_methodmessage_dropdown.currentText()
+            
+            limit_input_group = self.limit_input_group.value()
+            limit_input_group2 = self.limit_input_group2.value() 
             processes = self.processes_input.value()
             threads = self.threads_input.value()
             limit_input = self.limit_input.value()
+            limit_input_sleep = self.limit_input_sleep.value()
             existing_group_combo = self.existing_group_combo.currentText()
             message_for_direct = self.message_for_direct.toPlainText()
 
@@ -1835,9 +2772,20 @@ class MainWindow(QMainWindow):
 
             configs['DEFAULT'] = {
                 'proxy_group': proxy_group,
+                'proxy_method_dropdown': proxy_method_dropdown,
+                'proxy_method_manual_dropdown': proxy_method_manual_dropdown,
+                'proxy_method_manual2_dropdown': proxy_method_manual2_dropdown,
+                'direct_method_dropdown': direct_method_dropdown,
+                'direct_methodmessage_dropdown': direct_methodmessage_dropdown,
+                
+                'limit_input_group': limit_input_group,
+                'limit_input_group2': limit_input_group2,  
+                
                 'processes': processes,
                 'threads': threads,
                 'limit_input': limit_input,
+                'limit_input_sleep': limit_input_sleep,
+
                 'existing_group_combo': existing_group_combo,
                 'message_for_direct': message_for_direct
 
@@ -1860,8 +2808,8 @@ class MainWindow(QMainWindow):
                         if current_table.item(row, 5) and current_table.item(row, 5).text() == "В работе":
                             QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
                             return
-        
-                    self.direct_message(current_table, selected_items, proxy_group, processes, threads, message_for_direct, limit_input,group_name)
+
+                    self.direct_message(current_table, selected_items, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, processes, threads, message_for_direct,limit_input_sleep, limit_input,group_name)
 
 
     def load_proxy_groups(self):
@@ -1996,6 +2944,22 @@ class MainWindow(QMainWindow):
         delete_action = QAction("Удалить группу", self)
         delete_action.triggered.connect(self.delete_audience_group)
         context_menu.addAction(delete_action)
+        savefile_action = QAction("Сохранить в файл всю аудиторию", self)
+        savefile_action.triggered.connect(self.save_audience_group_to_file)
+        context_menu.addAction(savefile_action)
+        
+        savefile2_action = QAction("Сохранить в файл пройденную аудиторию", self)
+        savefile2_action.triggered.connect(self.save_passed_audience_to_file)
+        context_menu.addAction(savefile2_action)  
+        
+        savefile3_action = QAction("Сохранить в файл не пройденную аудиторию", self)
+        savefile3_action.triggered.connect(self.save_new_audience_to_file)
+        context_menu.addAction(savefile3_action)  
+        
+
+        
+        
+        
         context_menu.exec_(self.audience_table.viewport().mapToGlobal(position))
 
     def delete_audience_group(self):
@@ -2016,6 +2980,107 @@ class MainWindow(QMainWindow):
             
             # Удалить строку из таблицы
             self.audience_table.removeRow(index.row())
+            
+            
+
+    def save_audience_group_to_file(self):
+        selected_rows = self.audience_table.selectionModel().selectedRows()
+        for index in selected_rows:
+            group_name = self.audience_table.item(index.row(), 0).text()
+            
+            # Получить аудиторию из базы данных (только второй столбец)
+            try:
+                conn = sqlite3.connect(self.db_filename)
+                cursor = conn.cursor()
+                cursor.execute("SELECT user_id FROM audience_users WHERE group_name=?", (group_name,))
+                audience_data = cursor.fetchall()
+                cursor.close()
+                conn.close()
+            except sqlite3.Error as e:
+                print(f"Ошибка при получении аудитории из базы данных: {e}")
+                return
+            
+            # Открыть диалоговое окно для сохранения файла
+            options = QFileDialog.Options()
+            file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить аудиторию в файл", "", "CSV Files (*.csv);;All Files (*)", options=options)
+            if file_path:
+                try:
+                    # Сохранить аудиторию в файл
+                    with open(file_path, 'w', newline='', encoding='utf-8') as file:
+                        writer = csv.writer(file)
+                        # Записываем данные второго столбца в файл
+                        writer.writerows(audience_data)
+                    print(f"Аудитория успешно сохранена в файл: {file_path}")
+                except IOError as e:
+                    print(f"Ошибка при сохранении аудитории в файл: {e}")
+                
+
+
+    def save_passed_audience_to_file(self):
+        selected_rows = self.audience_table.selectionModel().selectedRows()
+        for index in selected_rows:
+            group_name = self.audience_table.item(index.row(), 0).text()
+
+            # Получить аудиторию с указанным статусом из базы данных
+            try:
+                conn = sqlite3.connect(self.db_filename)
+                cursor = conn.cursor()
+                cursor.execute("SELECT user_id FROM audience_users WHERE group_name=? AND status='Пройден'", (group_name,))
+                audience_data = cursor.fetchall()
+                cursor.close()
+                conn.close()
+            except sqlite3.Error as e:
+                print(f"Ошибка при получении аудитории из базы данных: {e}")
+                return
+
+            # Открыть диалоговое окно для сохранения файла
+            options = QFileDialog.Options()
+            file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить аудиторию в файл", "", "CSV Files (*.csv);;All Files (*)", options=options)
+            if file_path:
+                try:
+                    # Сохранить аудиторию в файл
+                    with open(file_path, 'w', newline='', encoding='utf-8') as file:
+                        writer = csv.writer(file)
+                        # Записываем данные второго столбца в файл
+                        writer.writerows(audience_data)
+                    print(f"Аудитория успешно сохранена в файл: {file_path}")
+                except IOError as e:
+                    print(f"Ошибка при сохранении аудитории в файл: {e}")
+ 
+    def save_new_audience_to_file(self):
+        selected_rows = self.audience_table.selectionModel().selectedRows()
+        for index in selected_rows:
+            group_name = self.audience_table.item(index.row(), 0).text()
+
+            # Получить аудиторию с указанным статусом из базы данных
+            try:
+                conn = sqlite3.connect(self.db_filename)
+                cursor = conn.cursor()
+                cursor.execute("SELECT user_id FROM audience_users WHERE group_name=? AND status='Новый'", (group_name,))
+                audience_data = cursor.fetchall()
+                cursor.close()
+                conn.close()
+            except sqlite3.Error as e:
+                print(f"Ошибка при получении аудитории из базы данных: {e}")
+                return
+
+            # Открыть диалоговое окно для сохранения файла
+            options = QFileDialog.Options()
+            file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить аудиторию в файл", "", "CSV Files (*.csv);;All Files (*)", options=options)
+            if file_path:
+                try:
+                    # Сохранить аудиторию в файл
+                    with open(file_path, 'w', newline='', encoding='utf-8') as file:
+                        writer = csv.writer(file)
+                        # Записываем данные второго столбца в файл
+                        writer.writerows(audience_data)
+                    print(f"Аудитория успешно сохранена в файл: {file_path}")
+                except IOError as e:
+                    print(f"Ошибка при сохранении аудитории в файл: {e}")          
+            
+            
+            
+            
             
     def terminate_audience_task(self, task_id):
         print('terminate_audience_task')
@@ -2125,7 +3190,7 @@ class MainWindow(QMainWindow):
                 elif status_text == "Невалид":
                     color = QColor(250,140,140)
                 elif status_text == "В работе":
-                    #color = QColor(250,250,140)
+                    color = QColor(250,250,140)
                     color = None
                     
                 elif status_text == "Завершен":
@@ -2212,15 +3277,6 @@ class MainWindow(QMainWindow):
 
                 print(f"Аккаунты загружены в таблицу {table_name}")
 
-
-
-
-
-
-
-
-
-
     def check_validity(self, table, items, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, processesx, threads):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         selected_rows = list(set(item.row() for item in items))
@@ -2256,7 +3312,7 @@ class MainWindow(QMainWindow):
             row_list = chunk
             for row in chunk:
                 table.setItem(row, 5, QTableWidgetItem("В работе"))
-                #self.set_row_color(table, row, QColor(250,250,140))
+                self.set_row_color(table, row, QColor(250,250,140))
                 self.set_row_color(table, row, None)
             p = multiprocessing.Process(target=process_function, args=(list(zip(login_list, row_list)), table_name, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, threads))
             processes.append(p)
@@ -2435,19 +3491,17 @@ class MainWindow(QMainWindow):
             print("Проверка валидности аккаунтов завершена")
 
         QTimer.singleShot(100, partial(check_results, task_name))    
-    
-    
-    
-    
-    
-    def parse_audience(self, table, items, proxy_group, processesx, threads, listUsername, limit_input,group_name):
+        
+    def parse_audience(self, table, items, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, processesx, threads, listUsername, limit_input,group_name):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         selected_rows = list(set(item.row() for item in items))
         total_accounts = len(selected_rows)
         processes = []
         result_queue = multiprocessing.Queue()
         status_queue = multiprocessing.Queue()
-
+        infoUA_queue = multiprocessing.Queue()
+        infoCookie_queue = multiprocessing.Queue()
+        infoDevice_queue = multiprocessing.Queue()
 
         task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
         task_name = f"Audience Parsing ({table_name})"
@@ -2477,64 +3531,181 @@ class MainWindow(QMainWindow):
             
         for i in range(0, total_accounts, accounts_per_process):
             chunk = selected_rows[i:i + accounts_per_process]
-            login_list = [table.item(row, 0).text() for row in chunk]
+            login_list = [
+                (table.item(row, 0).text(), table.item(row, 1).text(), table.item(row, 2).text(), table.item(row, 3).text(), table.item(row, 4).text())
+                for row in chunk
+            ]
             row_list = chunk
             for row in chunk:
                 table.setItem(row, 5, QTableWidgetItem("В работе"))
-                #self.set_row_color(table, row, QColor(250,250,140))
+                self.set_row_color(table, row, QColor(250,250,140))
                 self.set_row_color(table, row, None)
-            p = multiprocessing.Process(target=process_audience_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue, status_queue, proxy_group, threads, listUsername_queue, limit_input))
+            p = multiprocessing.Process(target=process_audience_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, threads, listUsername_queue, limit_input))
 
             processes.append(p)
             p.start()
 
         task_widget.processes = processes  # Associate processes with the task_widget
-        self.monitor_audience_processes(processes, result_queue, status_queue, table_name, table, task_id,group_name)
+        self.monitor_audience_processes(processes, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, table_name, table, task_id,group_name)
         print("Парсинг аудитории запущен")
     
-    def monitor_audience_processes(self, processes, result_queue, status_queue, table_name, table, task_name,group_name):
+    def monitor_audience_processes(self, processes, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, table_name, table, task_name,group_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             table_updates = []
             collected_users = 0         
-
             user_count = 0
             processed_rows = set()  # Keep track of processed rows to avoid double counting
 
+            updatesUA = []
+            table_updatesUA = []
+            processed_rowsUA = set()
+
+            updatesDevice = []
+            table_updatesDevice = []
+            processed_rowsDevice = set()
+
+            updatesCookie = []
+            table_updatesCookie = []
+            processed_rowsCookie = set()
+
+
             while not result_queue.empty():
                 login, status_acc, user_ids, row = result_queue.get()
-                print(status_acc)
+                print('status_acc parsing: '+status_acc)
+                if isinstance(user_ids, list):
+                    if row in processed_rows:
+                        print(f"Row {row} already processed, skipping.")
+                        continue  # Skip already processed rows
 
-  
-                if row in processed_rows:
+                    user_count = len(user_ids)  # Подсчет количества пользователей
+                    table_updates.append((row, user_count))
+                    processed_rows.add(row)  # Mark row as processed
+
+                    collected_users += user_count
+
+                    print(f"User count: {collected_users}")
+
+                    # Сохранение пользователей пакетно
+                    user_data = [(group_name, user_id, "Новый") for user_id in user_ids]
+                    cursor.executemany("INSERT INTO audience_users (group_name, user_id, status) VALUES (?, ?, ?)", user_data)
+                    self.update_audience_table((group_name, user_count, row, table_name))
+
+                    conn.commit()
+                else:
+                    if row in processed_rows:
+                        print(f"Row {row} already processed, skipping.")
+                        continue  # Skip already processed rows
+                    table_updates.append((row, user_ids))
+ 
+
+            while not infoUA_queue.empty():
+                login, api_ua, row = infoUA_queue.get()
+                print(api_ua)
+                if row in processed_rowsUA:
                     print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
-                user_count = len(user_ids)  # Подсчет количества пользователей
-                table_updates.append((row, user_count))
-                processed_rows.add(row)  # Mark row as processed
+                updatesUA.append((api_ua, login))
+                table_updatesUA.append((row, api_ua))
+                processed_rowsUA.add(row)  # Mark row as processed
 
-                collected_users += user_count
+            if updatesUA:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET api_ua = ? WHERE login = ?"
+                    cursor.executemany(query, updatesUA)
+                    conn.commit()
+                    print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()       
+                    
+            while not infoDevice_queue.empty():
+                login, device, row = infoDevice_queue.get()
+                print(device)
+                if row in processed_rowsDevice:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
 
-                print(f"User count: {collected_users}")
+                updatesDevice.append((device, login))
+                table_updatesDevice.append((row, device))
+                processed_rowsDevice.add(row)  # Mark row as processed
 
-                # Сохранение пользователей пакетно
-                user_data = [(group_name, user_id, "Новый") for user_id in user_ids]
-                cursor.executemany("INSERT INTO audience_users (group_name, user_id, status) VALUES (?, ?, ?)", user_data)
-                self.update_audience_table((group_name, user_count, row, table_name))
+            if updatesDevice:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET device = ? WHERE login = ?"
+                    cursor.executemany(query, updatesDevice)
+                    conn.commit()
+                    print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()       
+                    
 
-            conn.commit()
+            while not infoCookie_queue.empty():
+                login, cookie, row = infoCookie_queue.get()
+                print(cookie)
+                if row in processed_rowsCookie:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
+
+                updatesUA.append((cookie, login))
+                table_updatesCookie.append((row, cookie))
+                processed_rowsCookie.add(row)  # Mark row as processed
+
+            if updatesCookie:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET cookie = ? WHERE login = ?"
+                    cursor.executemany(query, updatesCookie)
+                    conn.commit()
+                    print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()       
+                    
+
+
+
+
+            
+            
+            
             conn.close()
+            
 
+            
+            for row, cookie in table_updatesCookie:
+                table.setItem(row, 4, QTableWidgetItem(cookie))
+                print(f"Updated table row {row} with status {cookie}")
+                self.set_row_color(table, row, QColor(250,250,140))
+                
+            for row, device in table_updatesDevice:
+                table.setItem(row, 2, QTableWidgetItem(device))
+                print(f"Updated table row {row} with status {device}")
+                self.set_row_color(table, row, QColor(250,250,140))
+            
+            for row, api_ua in table_updatesUA:
+                table.setItem(row, 3, QTableWidgetItem(api_ua))
+                print(f"Updated table row {row} with status {api_ua}")
+                self.set_row_color(table, row, QColor(250,250,140))
+                
             for row, user_count in table_updates:
-                print(table_updates)
+                print('ColorTableStatus: '+str(user_count))
                 if 'Закончил парсинг' in status_acc:
-                    table.setItem(row, 4, QTableWidgetItem('Закончил парсинг'))
+                    table.setItem(row, 5, QTableWidgetItem('Закончил парсинг'))
                     self.set_row_color(table, row)  
+                elif 'Невалид' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Невалид. Закончил парсинг'))
+                    self.set_row_color(table, row, QColor(250,140,140))        
+                    
+                    
                 else:
-                    table.setItem(row, 4, QTableWidgetItem('Собрал: '+str(user_count)+' ...'))
-                    self.set_row_color(table, row)
+                    table.setItem(row, 5, QTableWidgetItem('Собрал: '+str(user_count)+' ...'))
+                    self.set_row_color(table, row, QColor(250,250,140))
 
             task_widget = self.tasks[task_name]
             task_widget.update_status(0, 0, collected_users, "В работе")  # Обновление статуса с учетом количества пользователей
@@ -2551,15 +3722,15 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(100, partial(check_results, task_name))
 
-
-
-    def direct_message(self, table, items, proxy_group, processesx, threads, message_for_direct, limit_input,group_name):
+    def direct_message(self, table, items, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, processesx, threads, message_for_direct,limit_input_sleep, limit_input,group_name):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table)).strip()
         selected_rows = list(set(item.row() for item in items))
         total_accounts = len(selected_rows)
         processes = []
         result_queue = multiprocessing.Queue()
-
+        infoUA_queue = multiprocessing.Queue() 
+        infoCookie_queue = multiprocessing.Queue()
+        infoDevice_queue = multiprocessing.Queue()
 
         task_id = f"{table_name}_{time.time()}"  # Generate a unique task_id
         task_name = f"Direct Message ({table_name})"
@@ -2595,30 +3766,47 @@ class MainWindow(QMainWindow):
             
         for i in range(0, total_accounts, accounts_per_process):
             chunk = selected_rows[i:i + accounts_per_process]
-            login_list = [table.item(row, 0).text() for row in chunk]
+            login_list = [
+                (table.item(row, 0).text(), table.item(row, 1).text(), table.item(row, 2).text(), table.item(row, 3).text(), table.item(row, 4).text())
+                for row in chunk
+            ]
             row_list = chunk
             for row in chunk:
                 table.setItem(row, 5, QTableWidgetItem("В работе"))
-                #self.set_row_color(table, row, QColor(250,250,140))
+                self.set_row_color(table, row, QColor(250,250,140))
                 self.set_row_color(table, row, None)
-            p = multiprocessing.Process(target=process_direct_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue,  proxy_group, threads, listUserIdQueue, message_for_direct, limit_input))
+            p = multiprocessing.Process(target=process_direct_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, threads, listUserIdQueue, message_for_direct,limit_input_sleep, limit_input))
 
             processes.append(p)
             p.start()
 
         task_widget.processes = processes  # Associate processes with the task_widget
-        self.monitor_direct_processes(processes,  result_queue,  table_name, table, task_id,group_name)
+        self.monitor_direct_processes(processes,  result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  table_name, table, task_id,group_name)
         print("Рассылка запущена")
     
-    def monitor_direct_processes(self, processes,  result_queue,  table_name, table, task_name,group_name):
+    def monitor_direct_processes(self, processes,  result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  table_name, table, task_name,group_name):
         def check_results(task_name):
             conn = sqlite3.connect('total.db')
             cursor = conn.cursor()
             table_updates = []
             collected_users = 0
             user_count = 0
+            messages_sentAll = 0
             messages_sent = 0
             processed_rows = set()  # Keep track of processed rows to avoid double counting
+            
+            
+            updatesUA = []
+            table_updatesUA = []
+            processed_rowsUA = set()
+
+            updatesDevice = []
+            table_updatesDevice = []
+            processed_rowsDevice = set()
+
+            updatesCookie = []
+            table_updatesCookie = []
+            processed_rowsCookie = set()
 
             while not result_queue.empty():
                 login, status_acc, user_ids, row = result_queue.get()
@@ -2629,64 +3817,175 @@ class MainWindow(QMainWindow):
                 if row in processed_rows:
                     print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
+            
+                
+                
+                if status_acc == "Невалид" or status_acc == "Спам-блок":
+                    table_updates.append((row, user_ids))
 
-                user_count = len(user_ids)  # Подсчет количества пользователей
-                table_updates.append((row, user_count))
-                processed_rows.add(row)  # Mark row as processed
-
-                for user_id in user_ids:
-                    cursor.execute("UPDATE audience_users SET status = 'Пройден' WHERE user_id = ?", (user_id,))
-                print('table_name: '+table_name)    
-                cursor.execute("UPDATE "+table_name+" SET messages_sent = messages_sent + ? WHERE login = ?", (user_count, login,))
-                self.update_audiencefordirect_table((group_name, user_count, row, table_name))
-
-                cursor.execute("SELECT messages_sent FROM " + table_name + " WHERE login = ?", (login,))
-
-                result = cursor.fetchone()
-                if result:
-                    messages_sent = result[0]
-                    print('messages_sent'+str(messages_sent))
-                    messages_sent = str(messages_sent)
                 else:
-                    messages_sent = 'error'
+                    
+                    user_count = len(user_ids)  # Подсчет количества пользователей
+                    messages_sentAll += user_count
+                    table_updates.append((row, user_count))
+
+                    processed_rows.add(row)  # Mark row as processed
+
+                    for user_id in user_ids:
+                        cursor.execute("UPDATE audience_users SET status = 'Пройден' WHERE user_id = ?", (user_id,))
+                    print('table_name: '+table_name)    
+                    cursor.execute("UPDATE "+table_name+" SET messages_sent = messages_sent + ? WHERE login = ?", (user_count, login,))
+                    self.update_audiencefordirect_table((group_name, user_count, row, table_name))
+
+                    cursor.execute("SELECT messages_sent FROM " + table_name + " WHERE login = ?", (login,))
+
+                    result = cursor.fetchone()
+                    if result:
+                        messages_sent = result[0]
+                        print('messages_sent'+str(messages_sent))
+                        messages_sent = str(messages_sent)
+                    else:
+                        messages_sent = 'error'
+            
+            while not infoUA_queue.empty():
+                login, api_ua, row = infoUA_queue.get()
+                print(api_ua)
+                if row in processed_rowsUA:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
+
+                updatesUA.append((api_ua, login))
+                table_updatesUA.append((row, api_ua))
+                processed_rowsUA.add(row)  # Mark row as processed
+
+            if updatesUA:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET api_ua = ? WHERE login = ?"
+                    cursor.executemany(query, updatesUA)
+                    conn.commit()
+                    print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()       
+                    
+            while not infoDevice_queue.empty():
+                login, device, row = infoDevice_queue.get()
+                print(device)
+                if row in processed_rowsDevice:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
+
+                updatesDevice.append((device, login))
+                table_updatesDevice.append((row, device))
+                processed_rowsDevice.add(row)  # Mark row as processed
+
+            if updatesDevice:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET device = ? WHERE login = ?"
+                    cursor.executemany(query, updatesDevice)
+                    conn.commit()
+                    print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()       
+                    
+
+            while not infoCookie_queue.empty():
+                login, cookie, row = infoCookie_queue.get()
+                print(cookie)
+                if row in processed_rowsCookie:
+                    print(f"Row {row} already processed, skipping.")
+                    continue  # Skip already processed rows
+
+                updatesUA.append((cookie, login))
+                table_updatesCookie.append((row, cookie))
+                processed_rowsCookie.add(row)  # Mark row as processed
+
+            if updatesCookie:
+                cursor.execute("BEGIN TRANSACTION")
+                try:
+                    query = f"UPDATE {table_name} SET cookie = ? WHERE login = ?"
+                    cursor.executemany(query, updatesCookie)
+                    conn.commit()
+                    print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
+                except sqlite3.OperationalError as e:
+                    print(f"Database error: {str(e)}")
+                    conn.rollback()       
+                    
+
+            
+            
+            
+            
+            
+            
             conn.commit()
             conn.close()
 
+
+
+            for row, cookie in table_updatesCookie:
+                table.setItem(row, 4, QTableWidgetItem(cookie))
+                print(f"Updated table row {row} with status {cookie}")
+                self.set_row_color(table, row, QColor(250,250,140))
+                
+            for row, device in table_updatesDevice:
+                table.setItem(row, 2, QTableWidgetItem(device))
+                print(f"Updated table row {row} with status {device}")
+                self.set_row_color(table, row, QColor(250,250,140))
+            
+            for row, api_ua in table_updatesUA:
+                table.setItem(row, 3, QTableWidgetItem(api_ua))
+                print(f"Updated table row {row} with status {api_ua}")
+                self.set_row_color(table, row, QColor(250,250,140))
+
+
+                    
+                    
+                    
             for row, user_count in table_updates:
-                print(table_updates)
+                print('ColorTableStatus1: '+str(user_count))
                 if 'Закончил рассылку' in status_acc:
-                    table.setItem(row, 4, QTableWidgetItem('Закончил рассылку'))
-                    table.setItem(row, 5, QTableWidgetItem(messages_sent))
-
-                    self.set_row_color(table, row)  
+                    table.setItem(row, 5, QTableWidgetItem('Закончил рассылку'))
+                    table.setItem(row, 6, QTableWidgetItem(messages_sent))
+                    self.set_row_color(table, row) 
+                elif 'Невалид' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Невалид. Закончил рассылку'))
+                    self.set_row_color(table, row, QColor(250,140,140)) 
+                elif 'Спам-блок' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Спам-блок. Закончил рассылку'))
+                    self.set_row_color(table, row, QColor(140,140,140))                  
+                    
+                    
+                    
                 else:
-                    table.setItem(row, 4, QTableWidgetItem('Отправил: '+str(user_count)+' сообщений'))
+                    table.setItem(row, 5, QTableWidgetItem('Отправил: '+str(user_count)+' сообщений'))
 
-                    table.setItem(row, 5, QTableWidgetItem(messages_sent))
-                    self.set_row_color(table, row)
-            print('test1')
+                    table.setItem(row, 6, QTableWidgetItem(messages_sent))
+                    self.set_row_color(table, row, QColor(250,250,140))
+            #print('test1')
             task_widget = self.tasks[task_name]
-            print('test2')
+            #print('test2')
 
-            task_widget.update_status(0, 0, user_count, "В работе")  # Обновление статуса с учетом количества пользователей
-            print('test3')
+            task_widget.update_status(0, 0, messages_sentAll, "В работе")  # Обновление статуса с учетом количества пользователей
+            #print('test3')
             try:
                 for p in processes:
                     
                     if p.is_alive():
                         QTimer.singleShot(100, partial(check_results, task_name))
                         return
-                print('test4')
+                #print('test4')
             except:
                 print('VAIOSJDn DOSAJ')
-            task_widget.update_status(0, 0, user_count, "Завершен")
+            task_widget.update_status(0, 0, messages_sentAll, "Завершен")
 
             print("Рассылка завершена")
 
         QTimer.singleShot(100, partial(check_results, task_name))
 
-    
-    
     def update_audiencefordirect_table(self, result):
         group_name, user_count, row, table_name = result
         print('1update_audiencefordirect_table ['+group_name+']')
@@ -2711,9 +4010,7 @@ class MainWindow(QMainWindow):
 
         # Вызов функции обновления пользовательского интерфейса после добавления группы
         self.audience_table.viewport().update()
-    
-    
-    
+      
     def update_audience_table(self, result):
         group_name, user_count, row, table_name = result
         
@@ -2743,17 +4040,41 @@ class MainWindow(QMainWindow):
         # Вызов функции обновления пользовательского интерфейса после добавления группы
         self.audience_table.viewport().update()
     
-    
-
-    
-    
     def table_context_menu(self, pos, table):
         menu = QMenu()
         delete_action = QAction("Удалить выбранные строки", self)
         delete_action.triggered.connect(lambda: self.delete_selected_rows(table))
         menu.addAction(delete_action)
+        delete_action = QAction("Удалить все невалидные аккаунты", self)
+        delete_action.triggered.connect(lambda: self.delete_invalid_accounts(table))
+        menu.addAction(delete_action)
         menu.exec_(table.viewport().mapToGlobal(pos))
+    
+    def delete_invalid_accounts(self,table):
+        table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table))
+        query = "DELETE FROM "+table_name+" WHERE status='Невалид'"
+        self.cursor.execute(query)
+        self.conn.commit()
+        print("Deleted invalid accounts from database")
 
+        # Отключение сигналов обновления таблицы
+        table.blockSignals(True)
+        
+        rows = table.rowCount()
+        for row in range(rows - 1, -1, -1):
+            status = table.item(row, 5).text()
+            print(status)
+            if status == "Невалид":
+                table.removeRow(row)
+        
+        # Включение сигналов обновления таблицы
+        table.blockSignals(False)
+        
+        
+        
+
+        print("Deleted invalid accounts from active table")
+             
     def delete_selected_rows(self, table):
         selected_rows = set(item.row() for item in table.selectedItems())
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table))
@@ -2796,8 +4117,51 @@ class MainWindow(QMainWindow):
         
         print("Выбранные строки удалены")
 
-if __name__ == '__main__':
+class LicenseDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Enter License Key")
+        self.layout = QVBoxLayout()
+
+        self.label = QLabel("Please enter your license key:")
+        self.layout.addWidget(self.label)
+
+        self.license_input = QLineEdit()
+        self.layout.addWidget(self.license_input)
+
+        self.submit_button = QPushButton("Submit")
+        self.submit_button.clicked.connect(self.submit_license)
+        self.layout.addWidget(self.submit_button)
+
+        self.setLayout(self.layout)
+
+    def submit_license(self):
+        license_key = self.license_input.text()
+        # Handle the license key (e.g., save it, validate it, etc.)
+        self.accept()
+    
+
+
+
+
+
+def main():
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+
+    license_data = read_license()
+    if not license_data or license_data['expiration_time'] < time.time():
+        license_data = prompt_license()
+
+    if __name__ == '__main__':
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())    
+    while True:
+        result = validate_license(license_data['license_key'])
+        if not result['valid']:
+            QMessageBox.critical(None, 'Error', 'License expired or invalid.')
+            sys.exit(1)
+        time.sleep(60)
+
+if __name__ == '__main__':
+    main()
