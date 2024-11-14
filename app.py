@@ -9,9 +9,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget, QSplitter, QTableWidgetItem, QHeaderView, QMenu, QAction,
     QFileDialog, QInputDialog,QSizePolicy,QGroupBox,QScrollArea,QMessageBox,QDialog,QLineEdit,QSpinBox,QTextEdit
 )
-from PyQt5.QtGui import QColor,QStandardItemModel,QCursor
+from PyQt5.QtGui import QColor,QStandardItemModel,QCursor,QFont
 
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer,QObject
 from PyQt5.QtCore import Qt
 import concurrent.futures
 import threading
@@ -42,11 +42,28 @@ import subprocess
 import hashlib
 import ssl
 import time
+import urllib3
+#from datetime import datetime
+# Disable only the InsecureRequestWarning
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-SERVER_URL = "http://serveridm/"
-LICENSE_FILE = "license.json"
 
+import gettext
+import os
+import yaml
 
+# Load the configuration file
+with open('config.yaml', 'r') as config_file:
+    config = yaml.safe_load(config_file)
+
+# Set up translation
+language = config.get('language', 'en')
+locales_dir = os.path.join(os.path.dirname(__file__), 'locales')
+
+t = gettext.translation('app', locales_dir, languages=[language], fallback=True)
+t.install()
+
+_ = t.gettext
 
 
 
@@ -64,19 +81,23 @@ def write_license(license_data):
         json.dump(license_data, file)
 
 def validate_license(license_key):
-    response = requests.post(SERVER_URL, data={'license_key': license_key})
-    print(response.text)
-    return response.json()
-
+    try:
+        response = requests.post(SERVER_URL+'/validate_license.php', data={'license_key': license_key})
+        #print(response.text)
+        return response.json()
+    except:
+        sys.exit(1)
 def prompt_license():
     app = QApplication([])
     license_key, ok = QInputDialog.getText(None, 'License Key', 'Enter your license key:')
     if ok and license_key:
         result = validate_license(license_key)
-        print(result)
-        if result['valid']:
-            write_license(result)
-            return result
+        if result['status'] == "valid":
+            resultx = {
+            'license_key':license_key
+            } 
+            write_license(resultx)
+            return resultx
         else:
             QMessageBox.critical(None, 'Error', 'Invalid license key.')
             sys.exit(1)
@@ -126,27 +147,27 @@ class TaskMonitorWidget(QWidget):
 
         if 'Validation Check' in self.task_name:
 
-            self.task_label = QLabel(f"Задача: {self.task_name}")
-            self.valid_label = QLabel(f"Валидные: {self.valid_count}")
-            self.invalid_label = QLabel(f"Невалидные: {self.invalid_count}")
+            self.task_label = QLabel(f"Task: {self.task_name}")
+            self.valid_label = QLabel(f"Valid: {self.valid_count}")
+            self.invalid_label = QLabel(f"Invalid: {self.invalid_count}")
             
         if 'Audience' in self.task_name:
-            self.task_label = QLabel(f"Задача: {self.task_name} Запись в [ {self.group_name} ]")
-            self.processed_label = QLabel(f"Обработано: {self.processed_count}")
+            self.task_label = QLabel(f"Task: {self.task_name} Запись в [ {self.group_name} ]")
+            self.processed_label = QLabel(f"Passed: {self.processed_count}")
             
         if 'Direct' in self.task_name:
-            self.task_label = QLabel(f"Задача: {self.task_name} [ {self.group_name} ]")
-            self.processed_label = QLabel(f"Кол-во доставленных сообщений: {self.processed_count}")
+            self.task_label = QLabel(f"Task: {self.task_name} [ {self.group_name} ]")
+            self.processed_label = QLabel(f"Good sent message: {self.processed_count}")
 
-        self.status_label = QLabel("Статус: В процессе")
-        self.accounts_label = QLabel(f"Всего аккаунтов: {self.total_accounts}")
+        self.status_label = QLabel("Status: In process")
+        self.accounts_label = QLabel(f"Total accounts in the task: {self.total_accounts}")
 
-        self.time_label = QLabel("Время: 0с")
+        self.time_label = QLabel("Time: 0s")
 
-        self.stop_button = QPushButton("Остановить")
+        self.stop_button = QPushButton("Stop")
         self.stop_button.clicked.connect(self.stop_task)
 
-        self.close_button = QPushButton("Закрыть")
+        self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close_task)
         self.close_button.setVisible(False)
 
@@ -200,7 +221,7 @@ class TaskMonitorWidget(QWidget):
 
     def update_time(self):
         elapsed_time = int(time.time() - self.start_time)
-        self.time_label.setText(f"Время: {elapsed_time}с")
+        self.time_label.setText(f"Time: {elapsed_time}s")
 
     def update_status(self, valid_count, invalid_count, processed_count, status):
 
@@ -209,17 +230,17 @@ class TaskMonitorWidget(QWidget):
             if 'Validation Check' in self.task_name:
                 self.valid_count += valid_count
                 self.invalid_count += invalid_count
-                self.valid_label.setText(f"Валидные: {self.valid_count}")
-                self.invalid_label.setText(f"Невалидные: {self.invalid_count}")
+                self.valid_label.setText(f"Valid: {self.valid_count}")
+                self.invalid_label.setText(f"Invalid: {self.invalid_count}")
             elif 'Audience Parsing' in self.task_name:
                 self.processed_count += processed_count
-                self.processed_label.setText(f"Обработано: {self.processed_count}")
+                self.processed_label.setText(f"Passed: {self.processed_count}")
             elif 'Direct' in self.task_name:
                 self.processed_count += processed_count
-                self.processed_label.setText(f"Доставленных сообщений: {self.processed_count}")
-            self.status_label.setText(f"Статус: {status}")
+                self.processed_label.setText(f"Good sent message: {self.processed_count}")
+            self.status_label.setText(f"Status: {status}")
 
-            if status in ["Завершен", "Остановлен"]:
+            if status in ["Completed", "Stopped"]:
                 self.stop_button.setVisible(False)
                 self.close_button.setVisible(True)
                 self.timer.stop()
@@ -463,9 +484,12 @@ def changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,p
                 cursor.execute(f"SELECT * FROM proxygroup_{proxy_group} LIMIT 1 OFFSET {random_offset}")
                 random_row = cursor.fetchone()
                 break
-            except:
-                print('OK ERROR. WAIT PROXY REFRESH')
+            except Exception as exc:
+                print('ERROR GET PROXY '+str(exc))
                 continue
+                
+                
+                
         conn.close()
         
         
@@ -475,7 +499,7 @@ def changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,p
             proxystring = ip+":"+port
         else:
            proxystring = log+":"+pas+"@"+ip+":"+port
-        print(proxystring)
+        # print(proxystring)
 
         if typeproxy == 'socks5':
             proxies = {
@@ -500,11 +524,11 @@ def changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,p
             timezone = str(timezone)
             timezone = timezone.replace('+', '')
             timezone = timezone.replace('-', '')
-            print('accept_ln: '+accept_ln)
-            print('ig_locale: '+ig_locale)
-            print('ig_locale_startup: '+ig_locale_startup)
-            print('timezone: '+timezone)
-            print('timezonename: '+timezonename)
+            #print('accept_ln: '+accept_ln)
+            #print('ig_locale: '+ig_locale)
+            #print('ig_locale_startup: '+ig_locale_startup)
+            #print('timezone: '+timezone)
+            #print('timezonename: '+timezonename)
             
         if proxy_method_dropdown == "IP-API":
             try:
@@ -543,20 +567,16 @@ def changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,p
                 except:
                     continue    
             
-        
-        return proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename
-
+        try:
+            return proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename
+        except:
+            continue
 def authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename):
 
 
-    print('accept_ln: '+accept_ln)
-    print('ig_locale: '+ig_locale)
-    print('ig_locale_startup: '+ig_locale_startup)
-    print('timezone: '+timezone)
-    print('timezonename: '+timezonename)
+
     timereal = gettimereal(timezonename)
-    print('timereal: '+str(timereal))
-    print('proxies: '+str(proxies))
+
     while True:
         try:
             headers = {
@@ -594,7 +614,6 @@ def authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_drop
                 'Connection': 'close'
             }
             response = requests.get('https://i.instagram.com/api/v1/accounts/current_user/?edit=true', headers=headers, timeout=60, proxies=proxies, verify=False)
-            print(response.text)
             if 'login_required' in response.text or 'user_has_logged_out' in response.text or 'not-logged-in' in response.text or '","require_login":true,"status":"fail"' in response.text:
                 statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = login_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
                 if statusDef == "GOOD":
@@ -679,7 +698,6 @@ def login_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown
             
             try:
                 response = requests.post('https://i.instagram.com/api/v1/accounts/login/', headers=headers, timeout=30, data=postdata, proxies=proxies)
-                print(response.text)
                 if response.status_code == 429:
                     print('REG #429 LOGIN')
                     proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
@@ -716,11 +734,11 @@ def check_validity_thread(account_queue, result_queue, status_queue, infoUA_queu
     while not account_queue.empty():
         massiveAcc,row = account_queue.get()
         login,password,device,api_ua,cookie = massiveAcc
-        print('login: '+str(login))
-        print('password: '+str(password))
-        print('device: '+str(device))
-        print('cookie: '+str(cookie))
-        print('api_ua: '+str(api_ua))
+       # print('login: '+str(login))
+       # print('password: '+str(password))
+       # print('device: '+str(device))
+       # print('cookie: '+str(cookie))
+      #  print('api_ua: '+str(api_ua))
         
         if device == "":
 
@@ -779,9 +797,9 @@ def check_validity_thread(account_queue, result_queue, status_queue, infoUA_queu
                 statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
             if statusDef == "GOOD":
                 infoCookie_queue.put((login, 'rur='+rur+'; mid='+mid+'; ds_user_id='+ds_user_id+'; Authorization='+authorization+'; X-IG-WWW-Claim='+claim+';', row))
-                valid_status = random.choice(["Валид"])
+                valid_status = random.choice(["Valid"])
             elif statusDef == "BAD":
-                valid_status = random.choice(["Невалид"])
+                valid_status = random.choice(["Invalid"])
 
                 
             result_queue.put((login, valid_status, row))
@@ -796,12 +814,12 @@ def check_validity_thread(account_queue, result_queue, status_queue, infoUA_queu
 def process_function(account_list, table_name, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, threadsx):
     account_queue = Queue()
     for account in account_list:
-        print('account '+str(account))
+        #print('account '+str(account))
         account_queue.put(account)
 
     threads = []
-    print('threadsx: '+str(threadsx))
-    print('proxy_method_dropdown: '+str(proxy_method_dropdown))
+    #print('threadsx: '+str(threadsx))
+    #print('proxy_method_dropdown: '+str(proxy_method_dropdown))
     
     for _ in range(threadsx):  # 100 потоков
         thread = threading.Thread(target=check_validity_thread, args=(account_queue, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown))
@@ -820,14 +838,14 @@ def audience_thread(account_queue, result_queue, status_queue, infoUA_queue,info
         massiveAcc,row = account_queue.get()
         login,password,device,api_ua,cookie = massiveAcc
         if listUsername_queue.empty():
-            print('2Закончились Username  в списке для парсинга')
-            result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+            #print('2Закончились Username  в списке для парсинга')
+            result_queue.put((login, 'Finished parsing', 'Finished parsing', row))
             continue
-        print('login: '+str(login))
-        print('password: '+str(password))
-        print('device: '+str(device))
-        print('cookie: '+str(cookie))
-        print('api_ua: '+str(api_ua))
+        #print('login: '+str(login))
+        #print('password: '+str(password))
+        #print('device: '+str(device))
+        # print('cookie: '+str(cookie))
+        #print('api_ua: '+str(api_ua))
         
         if device == "":
 
@@ -885,12 +903,12 @@ def audience_thread(account_queue, result_queue, status_queue, infoUA_queue,info
 
                 statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
             if statusDef == "GOOD":
-                print('ВАЛИДНЫЙ АКК, ИДЕМ ПАРСИТЬ')
+                print('Valid account')
 
                 infoCookie_queue.put((login, 'rur='+rur+'; mid='+mid+'; ds_user_id='+ds_user_id+'; Authorization='+authorization+'; X-IG-WWW-Claim='+claim+';', row))
             elif statusDef == "BAD":
-                print('ДОХЛЫЙ АКК НАДО ДРУГОЙ')
-                result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                print('Invalid account')
+                result_queue.put((login, 'Invalid', 'Finished parsing', row))
                 
 
         except Exception as e:
@@ -901,13 +919,13 @@ def audience_thread(account_queue, result_queue, status_queue, infoUA_queue,info
 
             while True:
                 if listUsername_queue.empty():
-                    print('Закончились Username  в списке для парсинга')
-                    result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+                    #print('Закончились Username  в списке для парсинга')
+                    result_queue.put((login, 'Finished parsing', 'Finished parsing', row))
                     #print('account_queue task_done')
                     #account_queue.task_done()
                     #continue
 
-                    #result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+                    #result_queue.put((login, 'Finished parsing', 'Finished parsing', row))
 
                     break
                     
@@ -976,16 +994,16 @@ def audience_thread(account_queue, result_queue, status_queue, infoUA_queue,info
                             print('idParsing: '+str(idParsing))
                             break
                         else:
-                            print('не нашел айди юзера..')
+                            print('I did not find the ID of the user..')
                     except Exception as exc:
                         print('[#01s63] fail connect login ['+str(exc)+']')
                         proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
                         continue
                 
                 if exchall == True:
-                    print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
+                    #print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
                     listUsername_queue.put(usernameParsing)
-                    result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                    result_queue.put((login, 'Invalid', 'Finished parsing', row))
 
                     break
                     
@@ -1042,19 +1060,19 @@ def audience_thread(account_queue, result_queue, status_queue, infoUA_queue,info
                         break     
                       
                 if exchall == True:
-                    print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
+                    #print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
                     listUsername_queue.put(usernameParsing)
-                    result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                    result_queue.put((login, 'Invalid', 'Finished parsing', row))
 
                     break   
                     
                 if listUsername_queue.empty():    
-                    print('listUsername_queue пустой. Заканчиваю работу')
+                    #print('listUsername_queue пустой. Заканчиваю работу')
 
-                    result_queue.put((login, 'Закончил парсинг', 'Закончил парсинг', row))
+                    result_queue.put((login, 'Finished parsing', 'Finished parsing', row))
                     break
                 else:
-                    print('БЕРУ НОВЫЙ ЛОГИН ДЛЯ ПАРСИНГА')
+                    print('I m taking a new login for parsing')
                     continue
                     
             account_queue.task_done()
@@ -1077,7 +1095,7 @@ def process_audience_function(account_list, table_name, group_name,  result_queu
 
 def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  group_name, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, listUserIdQueue, message_for_direct,limit_input_sleep, limit_input):
     
-    print('START audience_thread')
+    #print('START audience_thread')
 
     while not account_queue.empty():
 
@@ -1085,14 +1103,14 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
         massiveAcc,row = account_queue.get()
         login,password,device,api_ua,cookie = massiveAcc
         if listUserIdQueue.empty():
-            print('2Закончились Username  в списке для рассылки')
-            result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+            #print('2Закончились Username  в списке для рассылки')
+            result_queue.put((login, 'Finished the mailing direct', 'Finished the mailing direct', row))
             continue
-        print('login: '+str(login))
-        print('password: '+str(password))
-        print('device: '+str(device))
-        print('cookie: '+str(cookie))
-        print('api_ua: '+str(api_ua))
+        #print('login: '+str(login))
+       #print('password: '+str(password))
+        #print('device: '+str(device))
+       ## print('cookie: '+str(cookie))
+        #print('api_ua: '+str(api_ua))
         
         if device == "":
 
@@ -1150,12 +1168,12 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
 
                 statusDef,login,password,api_ua,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = authorize_account(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,login,password,api_ua,xbloksversionid,xigcapabilities,android,phone_id,device_id,adid_id,session_id,mid,rur,ds_user_id,claim,csrftoken,authorization,sessionid,proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename)
             if statusDef == "GOOD":
-                print('ВАЛИДНЫЙ АКК, ИДЕМ ПАРСИТЬ')
+                print('Valid account')
 
                 infoCookie_queue.put((login, 'rur='+rur+'; mid='+mid+'; ds_user_id='+ds_user_id+'; Authorization='+authorization+'; X-IG-WWW-Claim='+claim+';', row))
             elif statusDef == "BAD":
-                print('ДОХЛЫЙ АКК НАДО ДРУГОЙ')
-                result_queue.put((login, 'Невалид', 'Закончил рассылку', row))
+                print('Invalid account')
+                result_queue.put((login, 'Invalid', 'Finished the mailing direct', row))
                 
 
         except Exception as e:
@@ -1167,13 +1185,13 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
 
             while True:
                 if listUserIdQueue.empty():
-                    print('Закончились Username  в списке для парсинга')
-                    result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+                    #print('Закончились Username  в списке для парсинга')
+                    result_queue.put((login, 'Finished the mailing direct', 'Finished the mailing direct', row))
                     #print('account_queue task_done')
                     #account_queue.task_done()
                     #continue
 
-                    #result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+                    #result_queue.put((login, 'Finished the mailing direct', 'Finished the mailing direct', row))
 
                     break
                     
@@ -1184,9 +1202,9 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                     if direct_method_dropdown == "Single":
                         idDirect = listUserIdQueue.get()
                         idDirectList.append(idDirect)
-                        print('idDirect: '+idDirect)
+                        #print('idDirect: '+idDirect)
                         idDirectSend = '['+idDirect+']'
-                        idDirectSend = '[18303671817]'
+                        #idDirectSend = '[18303671817]'
                         print('idDirectSend: '+idDirectSend)
 
                         
@@ -1195,14 +1213,14 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                         
                         while True:
                             
-                            print('cycGood:'+str(cycGood))
+                            #print('cycGood:'+str(cycGood))
                             if cycGood >= limit_input_group:
-                                print('cycGood limit_input_group')
+                                #print('cycGood limit_input_group')
                                 break
                                 
                             idDirect = listUserIdQueue.get()
                             exchall = False
-                            
+                            exlogout = False
                             goodLi = False
                             while True: #get_by_participants
                                 timereal = gettimereal(timezonename)
@@ -1242,23 +1260,25 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                                         'Connection': 'close'
                                     }
                                     response = requests.get('https://i.instagram.com/api/v1/direct_v2/threads/get_by_participants/?recipient_users=['+idDirect+']&seq_id=18839&limit=20', headers=headers, timeout=60, proxies=proxies, verify=False)
-                                    print(response.text)
+                                    #print(response.text)
                                     if 'ip_block' in response.text or 'sentry_block' in response.text or 'an error occurred' in response.text or 'consent_data' in response.text or 'DOCTYPE html' in response.text:
                                         print('вccыф IP_BLOCK')
                                         proxies,accept_ln,ig_locale,ig_locale_startup,timezone,timezonename = changeProxy(proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown)
                                         continue
-                                        
+                                    if '"login_required"' in response.text:
+                                        exlogout = True
+                                        break     
                                         
                                     if 'challenge_required' in response.text:
                                         exchall = True
                                         break    
                                         
                                     if response.status_code == 200:  
-                                        print('goodLi true')
+                                        #print('goodLi true')
                                         goodLi = True
                                         break
                                     else:
-                                        print('не нашел айди юзера..')
+                                        print('No find id user..['+idDirect+'] ['+response.text+']')
                                         break
                                 except Exception as exc:
                                     print('[#01s63] fail connect login ['+str(exc)+']')
@@ -1270,17 +1290,29 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                                 idDirectList.append(idDirect) 
                                 
                                 
+                            if exlogout == True:
+                                #print('Вставляю обратно idDirect и беру новый акк для парсинга если есть')
+                                listUserIdQueue.put(idDirect)
+                                result_queue.put((login, 'The session is invalid', 'Finished the mailing direct', row))
+
+                                break
+                                
                             if exchall == True:
-                                print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
-                                listUsername_queue.put(usernameParsing)
-                                result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                                #print('Вставляю обратно idDirect и беру новый акк для парсинга если есть')
+                                listUserIdQueue.put(idDirect)
+                                result_queue.put((login, 'Invalid', 'Finished the mailing direct', row))
 
                                 break 
                             
+                            
+                        if exlogout == True:
+                            result_queue.put((login, 'The session is invalid', 'Finished the mailing direct', row))
+
+                            break    
+                            
+                            
                         if exchall == True:
-                            print('Вставляю обратно usernameParsing и беру новый акк для парсинга если есть')
-                            listUsername_queue.put(usernameParsing)
-                            result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                            result_queue.put((login, 'Invalid', 'Finished the mailing direct', row))
 
                             break 
                             
@@ -1295,7 +1327,7 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                             
                             
                             
-                        #idDirectList.append('70809640646')
+                        #idDirectList.append('18303671817')
                             
                         idDirectSend = ','.join(idDirectList)
                         
@@ -1313,9 +1345,11 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
 
                 exchall = False
                 exspam = False
+                exlogout = False
+                exbaduser = False
                 mutation_token = '7763347'+str(randint(127414653000,927414653000))              
                 message = spintax.spin(message_for_direct)
-                print(message)
+                #print(message)
                 
 
 
@@ -1369,7 +1403,7 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                                 
                                 
                                 
-                            print('direct_methodmessage_dropdown: '+direct_methodmessage_dropdown)   
+                            #print('direct_methodmessage_dropdown: '+direct_methodmessage_dropdown)   
                             if direct_methodmessage_dropdown == "Text":
     
                                 
@@ -1385,9 +1419,11 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                                 "mutation_token":mutation_token,
                                 "_uuid":device_id,
                                 "offline_threading_id":mutation_token,
-                                
-                                
-                                
+                                "is_x_transport_forward": "false",
+                                "send_silently": "false",
+                                "btt_dual_send": "false",
+                                "is_ae_dual_send": "false"
+ 
                                 }
                                 response = requests.post('https://i.instagram.com/api/v1/direct_v2/threads/broadcast/text/', headers=headers, data=postdata,timeout=60, proxies=proxies, verify=False)
                                 
@@ -1396,8 +1432,12 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                                 link_url = re.findall('\\b((?:https?://)?(?:(?:www\\.)?(?:[\\da-z\\.-]+)\\.(?:[a-z]{2,6})|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:(?:[0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])))(?::[0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])?(?:/[\\w\\.-]*)*/?)\\b',message)
                                 link_url = link_url[0]
                                 #message = message.replace('\n', '\\n')
-                                print('message: '+message)
+                                #print('message: '+message)
+                                
+
+
                                 postdata = {
+                                #"thread_ids":idDirectSend,
                                 "recipient_users":idDirectSend,
                                 "link_text":message,
                                 "link_urls":'["'+link_url+'"]',
@@ -1410,7 +1450,10 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                                 "mutation_token":mutation_token,
                                 "_uuid":device_id,
                                 "offline_threading_id":mutation_token,
-                                
+                                "is_x_transport_forward": "false",
+                                "send_silently": "false",
+                                "btt_dual_send": "false",
+                                "is_ae_dual_send": "false"
                                 
                                 
                                 }
@@ -1419,8 +1462,8 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                             
                             
                             
-                            print(postdata)
-                            print(response.text)
+                            #print(postdata)
+                            
                             
 
                         except Exception as exc:
@@ -1432,8 +1475,17 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
                             exchall = True
                             break   
                             
-                            
                         if '"status_code":"403"' in response.text:
+                            exbaduser = True
+                            break   
+                        if '"login_required"' in response.text:
+                            exlogout = True
+                            break              
+                            
+                            
+                            
+                            
+                        if '"error_code":"1404006"' in response.text:
                             exspam = True
                             break   
                             
@@ -1451,56 +1503,80 @@ def direct_thread(account_queue, result_queue,infoUA_queue,infoCookie_queue,info
 
                 
                             result_queue.put((login, group_name, idDirectList, row))  
-                            print('УСПЕШНО ОТПРАВИЛ СООБЩЕНИЕ')
+                            print('Good sent')
                             time.sleep(int(limit_input_sleep))
                             break
                         else:
                             
-                            print('ОШИБКА ЗАПРОСА РАССЫЛКА')
+                            print('Bad sent ['+response.text+']')
                     
                 
                 if direct_method_dropdown == "Group":
                     if countAll >= int(limit_input_group2):
-                        print('ЛИМИТ ДОСТИГНУТ2')
-                        result_queue.put((login, 'Лимит достигнут', 'Закончил рассылку', row))
+                        print('Limit')
+                        result_queue.put((login, 'The limit has been reached', 'Finished the mailing direct', row))
                         break
                         
                         
                 if direct_method_dropdown == "Single":
 
                     if countAll >= int(limit_input):
-                        print('ЛИМИТ ДОСТИГНУТ2')
-                        result_queue.put((login, 'Лимит достигнут', 'Закончил рассылку', row))
+                        print('Limit')
+                        result_queue.put((login, 'The limit has been reached', 'Finished the mailing direct', row))
 
-                        break        
+                        break   
                         
-                if exspam == True:
-                    print('Вставляю обратно username и беру новый акк для парсинга если есть')
+                if exbaduser == True:
+                    print('Change users')
+                    
+                    #
+                    #for idDirect in idDirectList:
+                    #    listUserIdQueue.put(idDirect)
+#
+                    #result_queue.put((login, 'Spam block', 'Finished the mailing direct', row))
+
+                     
+                   
+                if exlogout == True:
+                    #print('Вставляю обратно username и беру новый акк для парсинга если есть')
                     
                     
                     for idDirect in idDirectList:
                         listUserIdQueue.put(idDirect)
 
-                    result_queue.put((login, 'Спам-блок', 'Закончил парсинг', row))
+                    result_queue.put((login, 'The session is invalid', 'Finished the mailing direct', row))
+
+                    break  
+                    
+                    
+                    
+                if exspam == True:
+                    #print('Вставляю обратно username и беру новый акк для парсинга если есть')
+                    
+                    
+                    for idDirect in idDirectList:
+                        listUserIdQueue.put(idDirect)
+
+                    result_queue.put((login, 'Spam block', 'Finished the mailing direct', row))
 
                     break   
                     
                 if exchall == True:
-                    print('Вставляю обратно username и беру новый акк для парсинга если есть')
+                    #print('Вставляю обратно username и беру новый акк для парсинга если есть')
                     for idDirect in idDirectList:
                         listUserIdQueue.put(idDirect)
                         
-                    result_queue.put((login, 'Невалид', 'Закончил парсинг', row))
+                    result_queue.put((login, 'Invalid', 'Finished the mailing direct', row))
                     break   
                     
                 if listUserIdQueue.empty():    
-                    print('listUserIdQueue пустой. Заканчиваю работу')
+                    #print('listUserIdQueue пустой. Заканчиваю работу')
                     for idDirect in idDirectList:
                         listUserIdQueue.put(idDirect)
-                    result_queue.put((login, 'Закончил рассылку', 'Закончил рассылку', row))
+                    result_queue.put((login, 'Finished the mailing direct', 'Finished the mailing direct', row))
                     break
                 else:
-                    print('БЕРУ НОВЫЙ ЛОГИН ДЛЯ РАССЫЛКИ')
+                    print('Change user login')
                     continue
                     
             account_queue.task_done()
@@ -1537,7 +1613,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.tasks = {}
-        self.setWindowTitle("Управление аккаунтами")  # Заголовок окна
+
+        self.setWindowTitle("InstManagerKevex ["+str(get_current_version()['version'])+"]")  # Заголовок окна
         self.setGeometry(100, 100, 1200, 800)  # Размеры окна
         
         self.db_filename = 'total.db'  # Имя файла базы данных
@@ -1552,37 +1629,45 @@ class MainWindow(QMainWindow):
     def initUI(self):
         self.main_layout = QVBoxLayout()  # Основной компоновщик
 
-        # Кнопка "Создать таблицу"
-        self.create_table_btn = QPushButton("Создать таблицу")
+        # Кнопка "Create an account table"
+        self.create_table_btn = QPushButton("Create an account table")
         self.create_table_btn.clicked.connect(self.create_table)
         self.main_layout.addWidget(self.create_table_btn)
         
         
-        # Кнопка "Создать группу прокси"
-        self.create_proxy_group_btn = QPushButton("Создать группу прокси")
+        # Кнопка "Create a proxy group"
+        self.create_proxy_group_btn = QPushButton("Create a proxy group")
         self.create_proxy_group_btn.clicked.connect(self.open_create_proxy_group_dialog)
         self.main_layout.addWidget(self.create_proxy_group_btn)
-        
+      
+        # Кнопка "Create an audience group"
+        self.create_audit_group_btn = QPushButton("Create an audience group")
+        self.create_audit_group_btn.clicked.connect(self.open_create_audit_group_dialog)
+        self.main_layout.addWidget(self.create_audit_group_btn)  
+      
+
+      
+      
         # Кнопка "Загрузить аккаунты"
-        self.load_accounts_btn = QPushButton("Загрузить аккаунты")
+        self.load_accounts_btn = QPushButton("Upload accounts")
         self.load_accounts_btn.clicked.connect(self.load_accounts)
         self.main_layout.addWidget(self.load_accounts_btn)
 
 
 
-        # New Button "Проверка валидности"
-        self.check_validity_btn = QPushButton("Проверка валидности")
+        # New Button "Validation check"
+        self.check_validity_btn = QPushButton("Validation check")
         self.check_validity_btn.clicked.connect(self.open_check_validity_dialog)
         self.main_layout.addWidget(self.check_validity_btn)
 
         # New Button "Парсинг аудитории"
-        self.parsing_btn = QPushButton("Парсинг аудитории")
+        self.parsing_btn = QPushButton("Audience parsing")
         self.parsing_btn.clicked.connect(self.open_check_parsing_dialog)
         self.main_layout.addWidget(self.parsing_btn)
         
         
-        # New Button "Рассылка"
-        self.direct_btn = QPushButton("Рассылка")
+        # New Button "Mailing direct"
+        self.direct_btn = QPushButton("Mailing direct")
         self.direct_btn.clicked.connect(self.open_check_direct_dialog)
         self.main_layout.addWidget(self.direct_btn)
         
@@ -1595,18 +1680,35 @@ class MainWindow(QMainWindow):
 
         # QTableWidget для отображения таблицы аудитории
         self.audience_table = QTableWidget()
-        self.audience_table.setColumnCount(4)
-        self.audience_table.setHorizontalHeaderLabels(["Название группы аудитории", "Кол-во пользователей", "Кол-во пройденных пользователей", "Дата создания группы"])
-        self.audience_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.audience_table.setColumnCount(3)
+        self.audience_table.setHorizontalHeaderLabels(["Name of the audience group", "Number of users", "Number of completed users"])
+        #self.audience_table.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        #self.audience_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.audience_table.setSelectionBehavior(QTableWidget.SelectRows)  # Выделение всей строки
+        self.audience_table.verticalHeader().setDefaultSectionSize(10)
+        self.audience_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.audience_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.audience_table.horizontalHeader().setStretchLastSection(True)
+        # Делаем заголовки столбцов жирными
+        font = QFont()
+        font.setBold(True)
+        self.audience_table.horizontalHeader().setFont(font)
+        
         
         
         # QTableWidget для отображения прокси
         self.proxy_table = QTableWidget()
         self.proxy_table.setColumnCount(5)
-        self.proxy_table.setHorizontalHeaderLabels(["Группа прокси" ,"Кол-во прокси", "Тип прокси", "Ссылка для обновления прокси", "Статус"])
-        self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.proxy_table.setHorizontalHeaderLabels(["Proxy Group" ,"Number of proxies", "Type of proxy", "Link to update the proxy", "Status"])
+        #self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        #self.proxy_table.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.proxy_table.setSelectionBehavior(QTableWidget.SelectRows)  # Выделение всей строки
+        self.proxy_table.verticalHeader().setDefaultSectionSize(10)
+        self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.proxy_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.proxy_table.horizontalHeader().setStretchLastSection(True)
+        self.proxy_table.horizontalHeader().setFont(font)
+        
         self.proxy_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.proxy_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.proxy_table.customContextMenuRequested.connect(self.show_proxy_context_menu)
@@ -1623,7 +1725,7 @@ class MainWindow(QMainWindow):
         self.stats_layout.setAlignment(Qt.AlignTop)  # Установка выравнивания по верхнему краю
 
         self.stats_container = QWidget()
-        self.stats_container = QGroupBox("Статистика")  # Using QGroupBox to add a title and border
+        self.stats_container = QGroupBox("Statistics")  # Using QGroupBox to add a title and border
 
         self.stats_container.setLayout(self.stats_layout)
 
@@ -1638,6 +1740,16 @@ class MainWindow(QMainWindow):
 
         self.main_layout.addWidget(self.splitter)
 
+
+
+
+
+
+
+
+
+
+
         # Виджет для основного окна
         container = QWidget()
         container.setLayout(self.main_layout)
@@ -1645,18 +1757,46 @@ class MainWindow(QMainWindow):
         self.audience_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.audience_table.customContextMenuRequested.connect(self.show_audience_context_menu)
         self.load_proxy_groups()
+        
+        
+
+        
+    def show_update_dialog(self, server_version):
+        local_version = get_current_version()
+        message = f"Current Version: {local_version['version']}\n"
+        message += f"New Version: {server_version['version']}\n"
+        message += f"Changes: {server_version['changes']}\n\nDo you want to update?"
+
+        reply = QMessageBox.question(self, 'Update Available', message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            if download_update(server_version):
+                QMessageBox.information(self, 'Update Downloaded', 'Update downloaded successfully. Please restart the program.')
+            else:
+                QMessageBox.critical(self, 'Update Failed', 'Failed to download the update.')
+
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
     def show_proxy_context_menu(self, position):
         menu = QMenu()
 
-        delete_action = QAction("Удалить выбранные группы прокси", self)
+        delete_action = QAction("Delete selected proxy groups", self)
         delete_action.triggered.connect(self.delete_selected_proxy_groups)
         menu.addAction(delete_action)
 
-        enable_auto_update_action = QAction("Включить автообновление по ссылке", menu)
+        enable_auto_update_action = QAction("Enable auto-update by link", menu)
         enable_auto_update_action.triggered.connect(self.enable_auto_update)
         menu.addAction(enable_auto_update_action)
 
-        stop_auto_update_action = QAction("Остановить обновление", menu)
+        stop_auto_update_action = QAction("Stop the update", menu)
         stop_auto_update_action.triggered.connect(self.stop_auto_update)
         menu.addAction(stop_auto_update_action)
 
@@ -1668,7 +1808,7 @@ class MainWindow(QMainWindow):
             group_name = self.proxy_table.item(index.row(), 0).text()
             table_name = f"proxygroup_{group_name}"
 
-            # Удалить группу из базы данных
+            # Delete a group из базы данных
             query = f"DROP TABLE IF EXISTS {table_name}"
             self.cursor.execute(query)
             self.conn.commit()
@@ -1679,7 +1819,7 @@ class MainWindow(QMainWindow):
 
     def enable_auto_update(self):
         
-        frequency, ok = QInputDialog.getInt(self, 'Частота обновления', 'Введите частоту обновления (в минутах):', value=5, min=1)
+        frequency, ok = QInputDialog.getInt(self, 'Update frequency', 'Enter the refresh rate (in minutes):', value=5, min=1)
         if ok:
             selected_groups = self.get_selected_proxy_groups()
             for group_namex in selected_groups:
@@ -1731,7 +1871,7 @@ class MainWindow(QMainWindow):
                     self.proxy_table.item(row, 2).setBackground(QColor('yellow'))
                     self.proxy_table.item(row, 3).setBackground(QColor('yellow'))
                     self.proxy_table.item(row, 4).setBackground(QColor('yellow'))
-                    self.proxy_table.setItem(row, 4, QTableWidgetItem('Автообновление запущено'))
+                    self.proxy_table.setItem(row, 4, QTableWidgetItem('Auto-update is running'))
                     self.proxy_table.item(row, 4).setBackground(QColor('yellow'))
 
                 else:
@@ -1792,11 +1932,22 @@ class MainWindow(QMainWindow):
         conn.commit()
         conn.close()
         
+
     def load_proxy_groups_into_dropdown(self):
         query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'proxygroup_%'"
         self.cursor.execute(query)
         groups = self.cursor.fetchall()
-        self.proxy_group_dropdown.addItems([group[0].replace("proxygroup_", "") for group in groups]) 
+        valid_groups = []
+
+        for group in groups:
+            table_name = group[0]
+            count_query = f"SELECT COUNT(*) FROM {table_name}"
+            self.cursor.execute(count_query)
+            count = self.cursor.fetchone()[0]
+            if count > 0:
+                valid_groups.append(table_name.replace("proxygroup_", ""))
+
+        self.proxy_group_dropdown.addItems(valid_groups)
         
     def load_proxy_method_into_dropdown(self):
         self.proxy_method_dropdown.addItems(['Manual','IP-API']) 
@@ -1893,19 +2044,19 @@ class MainWindow(QMainWindow):
         def open_check_validity_dialog(self):
 
             self.open_check_validity_dialog = QDialog(self)
-            self.open_check_validity_dialog.setWindowTitle("Проверка валидности")  
+            self.open_check_validity_dialog.setWindowTitle("Validation check")  
             
             layout = QVBoxLayout()
 
             # Proxy group dropdown
-            self.status_label = QLabel("Выберите прокси для этой задачи")
+            self.status_label = QLabel("Select a proxy for this task")
             self.proxy_group_dropdown = QComboBox(self.open_check_validity_dialog)
             self.load_proxy_groups_into_dropdown()
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
 
             # Proxy group dropdown
-            self.status_label = QLabel("Откуда брать информацию об IP")
+            self.status_label = QLabel("Where to get information about IP")
             
             self.proxy_method_dropdown = QComboBox(self.open_check_validity_dialog)
 
@@ -1931,7 +2082,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.proxy_method_manual2_dropdown)
 
             # Number of processes input
-            self.status_label = QLabel("Максимально кол-во процессов")
+            self.status_label = QLabel("Maximum number of processes")
             self.processes_input = QSpinBox(self.open_check_validity_dialog)
             self.processes_input.setRange(1, 100)
             self.processes_input.setValue(10)
@@ -1939,7 +2090,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.processes_input)
 
             # Number of threads input
-            self.status_label = QLabel("Кол-во потоков на процесс")
+            self.status_label = QLabel("Number of threads per process")
             self.threads_input = QSpinBox(self.open_check_validity_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
@@ -1947,18 +2098,18 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.threads_input)
 
             # Config name input
-            self.status_label = QLabel("Сохранить конфиг?")
+            self.status_label = QLabel("Save the config?")
             self.config_name_input = QLineEdit(self.open_check_validity_dialog)
-            self.config_name_input.setPlaceholderText("Название конфига")
+            self.config_name_input.setPlaceholderText("Name of the config")
             layout.addWidget(self.status_label)
             layout.addWidget(self.config_name_input)
             # Load config button
-            save_config_button = QPushButton("Сохранить конфиг", self.open_check_validity_dialog)
+            save_config_button = QPushButton("Save the config", self.open_check_validity_dialog)
             save_config_button.clicked.connect(self.saveConfigButton)
             layout.addWidget(save_config_button)
 
             # Config dropdown
-            self.status_label = QLabel("Выберите конфиг для его загрузки")
+            self.status_label = QLabel("Select the config to load it")
 
             self.config_dropdown = QComboBox(self.open_check_validity_dialog)
             self.load_configs_into_dropdown()
@@ -1967,7 +2118,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.config_dropdown)
 
             # Load config button
-            load_config_button = QPushButton("Загрузить конфиг", self.open_check_validity_dialog)
+            load_config_button = QPushButton("Load the config", self.open_check_validity_dialog)
             load_config_button.clicked.connect(self.load_config)
             layout.addWidget(load_config_button)
 
@@ -2096,14 +2247,14 @@ class MainWindow(QMainWindow):
             if current_table:
                 selected_items = current_table.selectedItems()
                 if len(selected_items) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Не выбраны аккаунты")
+                    QMessageBox.warning(self, "Error", "No accounts selected")
                     return
                 if selected_items:
                     # Check if any selected account is already "In Progress"
                     selected_rows = list(set(item.row() for item in selected_items))
                     for row in selected_rows:
-                        if current_table.item(row, 5) and current_table.item(row, 5).text() == "В работе":
-                            QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
+                        if current_table.item(row, 5) and current_table.item(row, 5).text() == "At work ...":
+                            QMessageBox.warning(self, "The task did not start", "The dedicated accounts are already in operation.")
                             return
                     print(str(processes))
                     print(str(threads))
@@ -2115,18 +2266,18 @@ class MainWindow(QMainWindow):
         def open_check_parsing_dialog(self):
 
             self.open_check_parsing_dialog = QDialog(self)
-            self.open_check_parsing_dialog.setWindowTitle("Парсинг")
+            self.open_check_parsing_dialog.setWindowTitle("Parsing")
             layout = QVBoxLayout()
 
             # Proxy group dropdown
-            self.status_label = QLabel("Выберите прокси для этой задачи")
+            self.status_label = QLabel("Select a proxy for this task")
             self.proxy_group_dropdown = QComboBox(self.open_check_parsing_dialog)
             self.load_proxy_groups_into_dropdown()
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
 
             # Proxy group dropdown
-            self.status_label = QLabel("Откуда брать информацию об IP")
+            self.status_label = QLabel("Where to get information about IP")
             
             self.proxy_method_dropdown = QComboBox(self.open_check_parsing_dialog)
 
@@ -2151,12 +2302,12 @@ class MainWindow(QMainWindow):
 
 
             
-            self.status_label = QLabel("Введите список Username")
+            self.status_label = QLabel("Enter the Username list")
             self.list_username_for_parsing = QTextEdit()
             layout.addWidget(self.status_label)
             layout.addWidget(self.list_username_for_parsing)
             
-            self.status_label = QLabel("Лимит сбора с каждого Username")
+            self.status_label = QLabel("The fee limit for each Username")
             self.limit_input = QSpinBox(self.open_check_parsing_dialog)
             self.limit_input.setRange(1, 99999999)
             self.limit_input.setValue(1000)
@@ -2165,14 +2316,14 @@ class MainWindow(QMainWindow):
             
             
             
-            self.status_label = QLabel("Выберите группу для сохранения аудитории")
+            self.status_label = QLabel("Select a group to save the audience")
 
             self.combo_box = QComboBox()
-            self.combo_box.addItems(["Создать новую группу", "Использовать существующую группу"])
+            self.combo_box.addItems(["Create a new group", "Use an existing group"])
             self.combo_box.currentIndexChanged.connect(self.on_combobox_changed)
 
             self.new_group_input = QLineEdit()
-            self.new_group_input.setPlaceholderText("Введите название новой группы")
+            self.new_group_input.setPlaceholderText("Enter the name of the new group")
             self.new_group_input.setVisible(True)
 
             self.existing_group_combo = QComboBox()
@@ -2186,7 +2337,7 @@ class MainWindow(QMainWindow):
 
 
             # Number of processes input
-            self.status_label = QLabel("Максимально кол-во процессов")
+            self.status_label = QLabel("Maximum number of processes")
             self.processes_input = QSpinBox(self.open_check_parsing_dialog)
             self.processes_input.setRange(1, 100)
             self.processes_input.setValue(10)
@@ -2194,7 +2345,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.processes_input)
 
             # Number of threads input
-            self.status_label = QLabel("Кол-во потоков на процесс")
+            self.status_label = QLabel("Number of threads per process")
             self.threads_input = QSpinBox(self.open_check_parsing_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
@@ -2202,18 +2353,18 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.threads_input)
 
             # Config name input
-            self.status_label = QLabel("Сохранить конфиг?")
+            self.status_label = QLabel("Save the config?")
             self.config_name_input = QLineEdit(self.open_check_parsing_dialog)
-            self.config_name_input.setPlaceholderText("Название конфига")
+            self.config_name_input.setPlaceholderText("Name of the config")
             layout.addWidget(self.status_label)
             layout.addWidget(self.config_name_input)
             # Load config button
-            save_config_button = QPushButton("Сохранить конфиг", self.open_check_parsing_dialog)
+            save_config_button = QPushButton("Save the config", self.open_check_parsing_dialog)
             save_config_button.clicked.connect(self.saveConfigButton_parsing)
             layout.addWidget(save_config_button)
 
             # Config dropdown
-            self.status_label = QLabel("Выберите конфиг для его загрузки")
+            self.status_label = QLabel("Select the config to load it")
 
             self.config_dropdown = QComboBox(self.open_check_parsing_dialog)
             self.load_configs_into_dropdown_parsing()
@@ -2222,7 +2373,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.config_dropdown)
 
             # Load config button
-            load_config_button = QPushButton("Загрузить конфиг", self.open_check_parsing_dialog)
+            load_config_button = QPushButton("Load the config", self.open_check_parsing_dialog)
             load_config_button.clicked.connect(self.load_config_parsing)
             layout.addWidget(load_config_button)
 
@@ -2257,10 +2408,10 @@ class MainWindow(QMainWindow):
             self.open_check_parsing_dialog.exec_()
 
         def on_combobox_changed(self, index):
-            if index == 0:  # Создать новую группу
+            if index == 0:  # Create a new group
                 self.new_group_input.setVisible(True)
                 self.existing_group_combo.setVisible(False)
-            elif index == 1:  # Использовать существующую группу
+            elif index == 1:  # Use an existing group
                 self.new_group_input.setVisible(False)
                 self.populate_existing_groups()
 
@@ -2274,7 +2425,7 @@ class MainWindow(QMainWindow):
                 self.existing_group_combo.addItems(existing_groups)
                 self.existing_group_combo.setVisible(True)
             else:
-                QMessageBox.warning(self, "Ошибка", "Нет существующих групп.")
+                QMessageBox.warning(self, "Error", "Нет существующих групп.")
                 self.combo_box.setCurrentIndex(0)
                 self.existing_group_combo.setVisible(False)
                 
@@ -2356,13 +2507,13 @@ class MainWindow(QMainWindow):
                 json.dump(configs, f)
         def save_and_start_parsing(self,dialog):
             
-            if self.combo_box.currentIndex() == 0:  # Создать новую группу
+            if self.combo_box.currentIndex() == 0:  # Create a new group
                 group_name = self.new_group_input.text()
-            else:  # Использовать существующую группу
+            else:  # Use an existing group
                 group_name = self.existing_group_combo.currentText()
                 
             if not group_name:
-                QMessageBox.warning(self, "Ошибка", "Название группы не задано.")
+                QMessageBox.warning(self, "Error", "The name of the group is not specified.")
                 return
                 
             config_name = self.config_name_input.text()
@@ -2407,15 +2558,15 @@ class MainWindow(QMainWindow):
             if current_table:
                 selected_items = current_table.selectedItems()
                 if len(selected_items) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Не выбраны аккаунты")
+                    QMessageBox.warning(self, "Error", "No accounts selected")
                     return
                 if selected_items:
                     # Check if any selected account is already "In Progress"
                     selected_rows = list(set(item.row() for item in selected_items))
 
                     for row in selected_rows:
-                        if current_table.item(row, 5) and current_table.item(row, 5).text() == "В работе":
-                            QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
+                        if current_table.item(row, 5) and current_table.item(row, 5).text() == "At work ...":
+                            QMessageBox.warning(self, "The task did not start", "The dedicated accounts are already in operation.")
                             return
                     
 
@@ -2425,18 +2576,18 @@ class MainWindow(QMainWindow):
         def open_check_direct_dialog(self):
 
             self.open_check_direct_dialog = QDialog(self)
-            self.open_check_direct_dialog.setWindowTitle("Рассылка")
+            self.open_check_direct_dialog.setWindowTitle("Mailing direct")
             layout = QVBoxLayout()
 
             # Proxy group dropdown
-            self.status_label = QLabel("Выберите прокси для этой задачи")
+            self.status_label = QLabel("Select a proxy for this task")
             self.proxy_group_dropdown = QComboBox(self.open_check_direct_dialog)
             self.load_proxy_groups_into_dropdown()
             layout.addWidget(self.status_label)
             layout.addWidget(self.proxy_group_dropdown)
             
             # Proxy group dropdown
-            self.status_label = QLabel("Откуда брать информацию об IP")
+            self.status_label = QLabel("Where to get information about IP")
             
             self.proxy_method_dropdown = QComboBox(self.open_check_direct_dialog)
 
@@ -2462,26 +2613,26 @@ class MainWindow(QMainWindow):
 
             
             
-            self.status_label = QLabel("Введите шаблон сообщения")
+            self.status_label = QLabel("Enter the message template")
             self.message_for_direct = QTextEdit()
             layout.addWidget(self.status_label)
             layout.addWidget(self.message_for_direct)
             
             
-            self.status_label = QLabel("Режим сообщения")
+            self.status_label = QLabel("Message mode")
             self.direct_methodmessage_dropdown = QComboBox(self.open_check_direct_dialog)
             self.direct_methodmessage_dropdown.addItems(['Text','Text+Link']) 
             layout.addWidget(self.status_label)
             layout.addWidget(self.direct_methodmessage_dropdown)
             
             
-            self.status_label = QLabel("Режим отправки")
+            self.status_label = QLabel("Sending mode")
             self.direct_method_dropdown = QComboBox(self.open_check_direct_dialog)
             self.direct_method_dropdown.addItems(['Group','Single']) 
             layout.addWidget(self.status_label)
             layout.addWidget(self.direct_method_dropdown)
             
-            self.status_label11 = QLabel("Кол-во участников в группе")
+            self.status_label11 = QLabel("Number of participants in the group")
             self.limit_input_group = QSpinBox(self.open_check_direct_dialog)
             self.limit_input_group.setRange(1, 50)
             self.limit_input_group.setValue(5)
@@ -2489,7 +2640,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.limit_input_group)            
             
             
-            self.status_label22 = QLabel("Лимит созданных групп за запуск")
+            self.status_label22 = QLabel("The limit of created groups per launch")
             self.limit_input_group2 = QSpinBox(self.open_check_direct_dialog)
             self.limit_input_group2.setRange(1, 50)
             self.limit_input_group2.setValue(4)
@@ -2500,7 +2651,7 @@ class MainWindow(QMainWindow):
             
             
             
-            self.status_label33 = QLabel("Лимит отправки сообщений за запуск")
+            self.status_label33 = QLabel("The limit for sending messages per launch")
             self.limit_input = QSpinBox(self.open_check_direct_dialog)
             self.limit_input.setRange(1, 1000)
             self.limit_input.setValue(20)
@@ -2509,7 +2660,7 @@ class MainWindow(QMainWindow):
             #self.direct_method_dropdown.currentIndexChanged.connect(self.on_direct_method_dropdown_changed)
             self.direct_method_dropdown.currentTextChanged.connect(self.on_direct_method_dropdown_changed2)
 
-            self.status_label44 = QLabel("Сон между сообщениями")
+            self.status_label44 = QLabel("Sleep between messages")
             self.limit_input_sleep = QSpinBox(self.open_check_direct_dialog)
             self.limit_input_sleep.setRange(1, 1000)
             self.limit_input_sleep.setValue(5)
@@ -2519,7 +2670,7 @@ class MainWindow(QMainWindow):
             
             
             
-            self.status_label = QLabel("Выберите группу аудитории для рссылки")
+            self.status_label = QLabel("Select the audience group for the link")
             self.existing_group_combo = QComboBox()
             self.existing_group_combo.clear()
             query = "SELECT DISTINCT group_name FROM audience_users"
@@ -2529,7 +2680,7 @@ class MainWindow(QMainWindow):
             if existing_groups:
                 self.existing_group_combo.addItems(existing_groups)
             else:
-                QMessageBox.warning(self, "Ошибка", "Нет существующих групп аудиторий.")
+                QMessageBox.warning(self, "Error", "There are no existing audience groups.")
                 self.existing_group_combo.addItems([''])
                 
                 
@@ -2542,7 +2693,7 @@ class MainWindow(QMainWindow):
                     
                     
             # Number of processes input
-            self.status_label = QLabel("Кол-во процессов")
+            self.status_label = QLabel("Maximum number of processes")
             self.processes_input = QSpinBox(self.open_check_direct_dialog)
             self.processes_input.setRange(1, 100)
             self.processes_input.setValue(10)
@@ -2550,7 +2701,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.processes_input)
 
             # Number of threads input
-            self.status_label = QLabel("Кол-во потоков")
+            self.status_label = QLabel("Number of threads per process")
             self.threads_input = QSpinBox(self.open_check_direct_dialog)
             self.threads_input.setRange(1, 100)
             self.threads_input.setValue(10)
@@ -2558,18 +2709,18 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.threads_input)
 
             # Config name input
-            self.status_label = QLabel("Сохранить конфиг?")
+            self.status_label = QLabel("Save the config?")
             self.config_name_input = QLineEdit(self.open_check_direct_dialog)
-            self.config_name_input.setPlaceholderText("Название конфига")
+            self.config_name_input.setPlaceholderText("Name of the config")
             layout.addWidget(self.status_label)
             layout.addWidget(self.config_name_input)
             # Load config button
-            save_config_button = QPushButton("Сохранить конфиг", self.open_check_direct_dialog)
+            save_config_button = QPushButton("Save the config", self.open_check_direct_dialog)
             save_config_button.clicked.connect(self.saveConfigButton_direct)
             layout.addWidget(save_config_button)
 
             # Config dropdown
-            self.status_label = QLabel("Выберите конфиг для его загрузки")
+            self.status_label = QLabel("Select the config to load it")
 
             self.config_dropdown = QComboBox(self.open_check_direct_dialog)
             self.load_configs_into_dropdown_direct()
@@ -2578,7 +2729,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(self.config_dropdown)
 
             # Load config button
-            load_config_button = QPushButton("Загрузить конфиг", self.open_check_direct_dialog)
+            load_config_button = QPushButton("Load the config", self.open_check_direct_dialog)
             load_config_button.clicked.connect(self.load_config_direct)
             layout.addWidget(load_config_button)
 
@@ -2798,15 +2949,15 @@ class MainWindow(QMainWindow):
             if current_table:
                 selected_items = current_table.selectedItems()
                 if len(selected_items) == 0:
-                    QMessageBox.warning(self, "Ошибка", "Не выбраны аккаунты")
+                    QMessageBox.warning(self, "Error", "No accounts selected")
                     return
                 if selected_items:
                     # Check if any selected account is already "In Progress"
                     selected_rows = list(set(item.row() for item in selected_items))
 
                     for row in selected_rows:
-                        if current_table.item(row, 5) and current_table.item(row, 5).text() == "В работе":
-                            QMessageBox.warning(self, "Задача не запустилась", "Выделенные аккаунты уже в работе.")
+                        if current_table.item(row, 5) and current_table.item(row, 5).text() == "At work ...":
+                            QMessageBox.warning(self, "The task did not start", "The dedicated accounts are already in operation.")
                             return
 
                     self.direct_message(current_table, selected_items, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, processes, threads, message_for_direct,limit_input_sleep, limit_input,group_name)
@@ -2837,18 +2988,18 @@ class MainWindow(QMainWindow):
     
     def open_create_proxy_group_dialog(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Создать группу прокси")
+        dialog.setWindowTitle("Create a proxy group")
         layout = QVBoxLayout()
 
         # Field for group name
         self.group_name_input = QLineEdit(dialog)
-        self.group_name_input.setPlaceholderText("Название группы")
+        self.group_name_input.setPlaceholderText("The name of the group")
         layout.addWidget(self.group_name_input)
 
         # Field for proxy file upload
         self.proxy_file_input = QLineEdit(dialog)
-        self.proxy_file_input.setPlaceholderText("Файл прокси")
-        self.proxy_file_button = QPushButton("Обзор")
+        self.proxy_file_input.setPlaceholderText("The proxy file")
+        self.proxy_file_button = QPushButton("Review")
         self.proxy_file_button.clicked.connect(self.select_proxy_file)
         layout.addWidget(self.proxy_file_input)
         layout.addWidget(self.proxy_file_button)
@@ -2860,30 +3011,31 @@ class MainWindow(QMainWindow):
 
         # Field for update URL
         self.update_url_input = QLineEdit(dialog)
-        self.update_url_input.setPlaceholderText("Ссылка для обновления прокси")
+        self.update_url_input.setPlaceholderText("Link to update the proxy")
         layout.addWidget(self.update_url_input)
 
         # OK button
         ok_button = QPushButton("OK", dialog)
-        ok_button.clicked.connect(self.create_proxy_group)
+        ok_button.clicked.connect(lambda: self.create_proxy_group(dialog))
+
         layout.addWidget(ok_button)
 
         dialog.setLayout(layout)
         dialog.exec_()
 
     def select_proxy_file(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Выбрать файл прокси", "", "All Files (*);;Text Files (*.txt)")
+        file_name, _ = QFileDialog.getOpenFileName(self, "Select a proxy file", "", "All Files (*);;Text Files (*.txt)")
         if file_name:
             self.proxy_file_input.setText(file_name)
 
-    def create_proxy_group(self):
+    def create_proxy_group(self,dialog):
         group_name = self.group_name_input.text()
         proxy_file = self.proxy_file_input.text()
         proxy_type = self.proxy_type_input.currentText()
         update_url = self.update_url_input.text()
 
         if not group_name  or not proxy_type:
-            QMessageBox.warning(self, "Ошибка", "Заполните все обязательные поля")
+            QMessageBox.warning(self, "Error", "Fill in all required fields")
             return
 
         # Read proxies from file
@@ -2892,7 +3044,7 @@ class MainWindow(QMainWindow):
                 with open(proxy_file, 'r') as f:
                     proxies = f.readlines()
             except Exception as e:
-                QMessageBox.critical(self, "Ошибка", f"Не удалось прочитать файл прокси: {e}")
+                QMessageBox.critical(self, "Error", f"The proxy file could not be read: {e}")
                 return
 
         # Insert proxies into the database
@@ -2927,9 +3079,118 @@ class MainWindow(QMainWindow):
             self.update_proxy_table(group_name, len(proxies), update_url, proxy_type)
         else:
             self.update_proxy_table(group_name, 0, update_url, proxy_type)
-
-        QMessageBox.information(self, "Успех", "Группа прокси создана успешно")
+        dialog.accept()
+        QMessageBox.information(self, "Успех", "Proxy Group created successfully")
         self.load_proxy_groups()
+
+
+
+
+    def open_create_audit_group_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Create an audience group")
+        layout = QVBoxLayout()
+
+        # Field for group name
+        self.group_name_input = QLineEdit(dialog)
+        self.group_name_input.setPlaceholderText("Name of the audience group")
+        layout.addWidget(self.group_name_input)
+
+        self.audit_file_input = QLineEdit(dialog)
+        self.audit_file_input.setPlaceholderText("The file with the audience")
+        self.audit_file_button = QPushButton("Review")
+        self.audit_file_button.clicked.connect(self.select_audit_file)
+        layout.addWidget(self.audit_file_input)
+        layout.addWidget(self.audit_file_button)
+
+
+        # OK button
+        ok_button = QPushButton("OK", dialog)
+        ok_button.clicked.connect(lambda: self.create_audit_group(dialog))
+        layout.addWidget(ok_button)
+
+        dialog.setLayout(layout)
+        dialog.exec_()
+
+    def select_audit_file(self):
+        file_name, _ = QFileDialog.getOpenFileName(self, "Select an audience file", "", "All Files (*);")
+        if file_name:
+            self.audit_file_input.setText(file_name)
+
+    def create_audit_group(self,dialog):
+        group_name = self.group_name_input.text()
+        audit_file = self.audit_file_input.text()
+
+        if not group_name:
+            QMessageBox.warning(self, "Error", "Fill in all required fields")
+            return
+
+        # Read proxies from file
+        if audit_file != '':
+
+                
+                
+            try:
+                with open(audit_file, 'r') as f:
+                    user_ids = [line.strip() for line in f.readlines()]
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"The proxy file could not be read: {e}")
+                return
+
+            # Prepare data for insertion
+            user_data = [(group_name, user_id, "Новый") for user_id in user_ids]
+
+            # Insert user data into the database
+            try:
+                self.cursor.executemany("INSERT INTO audience_users (group_name, user_id, status) VALUES (?, ?, ?)", user_data)
+                self.conn.commit()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Data could not be inserted into the database: {e}")
+                return      
+                
+  
+                
+            self.conn.commit()
+
+
+            
+            # Проверить, существует ли группа уже в таблице
+            rows = self.audience_table.rowCount()
+            group_row = -1
+            for row in range(rows):
+                if self.audience_table.item(row, 0).text() == group_name:
+                    group_row = row
+                    break
+
+            if group_row == -1:
+                # Группа не существует, добавить новую строку
+                self.audience_table.insertRow(self.audience_table.rowCount())
+                group_row = self.audience_table.rowCount() - 1
+                self.audience_table.setItem(group_row, 0, QTableWidgetItem(group_name))
+                self.audience_table.setItem(group_row, 1, QTableWidgetItem(str(len(user_ids))))
+                self.audience_table.setItem(group_row, 2, QTableWidgetItem("0"))
+                #today_date = datetime.today().strftime('%Y-%m-%d')
+                #self.audience_table.setItem(group_row, 3, QTableWidgetItem(today_date))
+            else:
+                # Обновить существующую группу
+                current_count = int(self.audience_table.item(group_row, 1).text())
+                new_count = current_count + len(user_ids)
+                self.audience_table.setItem(group_row, 1, QTableWidgetItem(str(new_count)))
+                
+                
+            print(f"Updated group {group_name} with {len(user_ids)} new users")
+
+            # Вызов функции обновления пользовательского интерфейса после добавления группы
+            self.audience_table.viewport().update()
+            dialog.accept()
+
+
+
+
+
+
+
+
 
     def update_proxy_table(self, group_name, proxy_count, update_url, proxy_type):
         row_position = self.proxy_table.rowCount()
@@ -2941,18 +3202,18 @@ class MainWindow(QMainWindow):
         self.proxy_table.setItem(row_position, 4, QTableWidgetItem('-'))
     def show_audience_context_menu(self, position):
         context_menu = QMenu()
-        delete_action = QAction("Удалить группу", self)
+        delete_action = QAction("Delete a group", self)
         delete_action.triggered.connect(self.delete_audience_group)
         context_menu.addAction(delete_action)
-        savefile_action = QAction("Сохранить в файл всю аудиторию", self)
+        savefile_action = QAction("Save the entire audience to a file", self)
         savefile_action.triggered.connect(self.save_audience_group_to_file)
         context_menu.addAction(savefile_action)
         
-        savefile2_action = QAction("Сохранить в файл пройденную аудиторию", self)
+        savefile2_action = QAction("Save the completed audience to a file", self)
         savefile2_action.triggered.connect(self.save_passed_audience_to_file)
         context_menu.addAction(savefile2_action)  
         
-        savefile3_action = QAction("Сохранить в файл не пройденную аудиторию", self)
+        savefile3_action = QAction("Save a failed audience to a file", self)
         savefile3_action.triggered.connect(self.save_new_audience_to_file)
         context_menu.addAction(savefile3_action)  
         
@@ -2967,7 +3228,7 @@ class MainWindow(QMainWindow):
         for index in sorted(selected_rows, reverse=True):
             group_name = self.audience_table.item(index.row(), 0).text()
             
-            # Удалить группу из базы данных
+            # Delete a group из базы данных
             try:
                 conn = sqlite3.connect(self.db_filename)
                 cursor = conn.cursor()
@@ -2976,7 +3237,7 @@ class MainWindow(QMainWindow):
                 cursor.close()
                 conn.close()
             except sqlite3.Error as e:
-                print(f"Ошибка при удалении группы из базы данных: {e}")
+                print(f"Error deleting a group from the database: {e}")
             
             # Удалить строку из таблицы
             self.audience_table.removeRow(index.row())
@@ -2997,22 +3258,22 @@ class MainWindow(QMainWindow):
                 cursor.close()
                 conn.close()
             except sqlite3.Error as e:
-                print(f"Ошибка при получении аудитории из базы данных: {e}")
+                print(f"Error getting the audience from the database: {e}")
                 return
             
             # Открыть диалоговое окно для сохранения файла
             options = QFileDialog.Options()
-            file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить аудиторию в файл", "", "CSV Files (*.csv);;All Files (*)", options=options)
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save the audience to a file", "", "CSV Files (*.csv);;All Files (*)", options=options)
             if file_path:
                 try:
-                    # Сохранить аудиторию в файл
+                    # Save the audience to a file
                     with open(file_path, 'w', newline='', encoding='utf-8') as file:
                         writer = csv.writer(file)
                         # Записываем данные второго столбца в файл
                         writer.writerows(audience_data)
-                    print(f"Аудитория успешно сохранена в файл: {file_path}")
+                    print(f"The audience has been successfully saved to a file: {file_path}")
                 except IOError as e:
-                    print(f"Ошибка при сохранении аудитории в файл: {e}")
+                    print(f"Error saving the audience to a file: {e}")
                 
 
 
@@ -3021,7 +3282,7 @@ class MainWindow(QMainWindow):
         for index in selected_rows:
             group_name = self.audience_table.item(index.row(), 0).text()
 
-            # Получить аудиторию с указанным статусом из базы данных
+            # Получить аудиторию с указанным Statusом из базы данных
             try:
                 conn = sqlite3.connect(self.db_filename)
                 cursor = conn.cursor()
@@ -3030,29 +3291,29 @@ class MainWindow(QMainWindow):
                 cursor.close()
                 conn.close()
             except sqlite3.Error as e:
-                print(f"Ошибка при получении аудитории из базы данных: {e}")
+                print(f"Error getting the audience from the database: {e}")
                 return
 
             # Открыть диалоговое окно для сохранения файла
             options = QFileDialog.Options()
-            file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить аудиторию в файл", "", "CSV Files (*.csv);;All Files (*)", options=options)
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save the audience to a file", "", "CSV Files (*.csv);;All Files (*)", options=options)
             if file_path:
                 try:
-                    # Сохранить аудиторию в файл
+                    # Save the audience to a file
                     with open(file_path, 'w', newline='', encoding='utf-8') as file:
                         writer = csv.writer(file)
                         # Записываем данные второго столбца в файл
                         writer.writerows(audience_data)
-                    print(f"Аудитория успешно сохранена в файл: {file_path}")
+                    print(f"The audience has been successfully saved to a file: {file_path}")
                 except IOError as e:
-                    print(f"Ошибка при сохранении аудитории в файл: {e}")
+                    print(f"Error saving the audience to a file: {e}")
  
     def save_new_audience_to_file(self):
         selected_rows = self.audience_table.selectionModel().selectedRows()
         for index in selected_rows:
             group_name = self.audience_table.item(index.row(), 0).text()
 
-            # Получить аудиторию с указанным статусом из базы данных
+            # Получить аудиторию с указанным Statusом из базы данных
             try:
                 conn = sqlite3.connect(self.db_filename)
                 cursor = conn.cursor()
@@ -3061,22 +3322,22 @@ class MainWindow(QMainWindow):
                 cursor.close()
                 conn.close()
             except sqlite3.Error as e:
-                print(f"Ошибка при получении аудитории из базы данных: {e}")
+                print(f"Error getting the audience from the database: {e}")
                 return
 
             # Открыть диалоговое окно для сохранения файла
             options = QFileDialog.Options()
-            file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить аудиторию в файл", "", "CSV Files (*.csv);;All Files (*)", options=options)
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save the audience to a file", "", "CSV Files (*.csv);;All Files (*)", options=options)
             if file_path:
                 try:
-                    # Сохранить аудиторию в файл
+                    # Save the audience to a file
                     with open(file_path, 'w', newline='', encoding='utf-8') as file:
                         writer = csv.writer(file)
                         # Записываем данные второго столбца в файл
                         writer.writerows(audience_data)
-                    print(f"Аудитория успешно сохранена в файл: {file_path}")
+                    print(f"The audience has been successfully saved to a file: {file_path}")
                 except IOError as e:
-                    print(f"Ошибка при сохранении аудитории в файл: {e}")          
+                    print(f"Error saving the audience to a file: {e}")          
             
             
             
@@ -3095,12 +3356,12 @@ class MainWindow(QMainWindow):
                             process.join()
                     print(f"All processes for task {task.task_name} have been terminated.")
                     
-                    # Update account status to 'Остановлен'
+                    # Update account status to 'Stopped'
                     for row in task.rows:
-                        if task.table.item(row, 5).text() == "В работе" or "Собрал" in task.table.item(row, 5).text() or "Отправил" in task.table.item(row, 5).text():  # Use task.table instead of self.tab_widget.currentWidget()
-                            task.table.setItem(row, 5, QTableWidgetItem("Остановлен"))
+                        if task.table.item(row, 5).text() == "At work ..." or "Bring" in task.table.item(row, 5).text() or "sent" in task.table.item(row, 5).text() or "Sent" in task.table.item(row, 5).text():  # Use task.table instead of self.tab_widget.currentWidget()
+                            task.table.setItem(row, 5, QTableWidgetItem("Stopped"))
                             self.set_row_color(task.table, row, QColor(220,220,250))
-                            print(f"Group {task.table.item(row, 0).text()} status set to 'Остановлен'")
+                            print(f"Group {task.table.item(row, 0).text()} status set to 'Stopped'")
                 else:
                     print(f"No processes found for task {task.task_name}.")
             else:
@@ -3113,7 +3374,7 @@ class MainWindow(QMainWindow):
 
         task_widget = self.tasks.get(task_id)
         if task_widget:
-            task_widget.update_status(0,0,0, "Остановлен")
+            task_widget.update_status(0,0,0, "Stopped")
             self.terminate_audience_task(task_id)     
             
     def create_audience_table(self):
@@ -3141,20 +3402,34 @@ class MainWindow(QMainWindow):
         print("Таблицы аудитории созданы")
 
     def create_table(self):
-        table_name, ok = QInputDialog.getText(self, "Создать таблицу", "Введите имя таблицы:")
-        if ok and table_name:
-            query = f"CREATE TABLE IF NOT EXISTS {table_name} (login TEXT, password TEXT, device TEXT, api_ua TEXT, cookies TEXT, status TEXT, messages_sent INTEGER)"
-            self.cursor.execute(query)
-            self.conn.commit()
-            self.add_table_tab(table_name)
-            print(f"Создана таблица {table_name}")
+        try:
+            table_name, ok = QInputDialog.getText(self, "Create an account table", "Enter the name of the table:")
+            if ok and table_name:
+                query = f"CREATE TABLE IF NOT EXISTS {table_name} (login TEXT, password TEXT, device TEXT, api_ua TEXT, cookies TEXT, status TEXT, messages_sent INTEGER)"
+                self.cursor.execute(query)
+                self.conn.commit()
+                self.add_table_tab(table_name)
+                print(f"Создана таблица {table_name}")
+        except:
+            QMessageBox.warning(self, "Error", "Bad name")
 
     def add_table_tab(self, table_name):
         table = QTableWidget()
         table.setColumnCount(7)
-        table.setHorizontalHeaderLabels(["Логин", "Пароль", "Device", "UA", "Cookies", "Статус", "Кол-во сообщений"])
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setHorizontalHeaderLabels(["Login", "Password", "Device", "UA", "Cookies", "Status", "Number of messages"])
+        #table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.verticalHeader().setDefaultSectionSize(10)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.horizontalHeader().setStretchLastSection(True)
+        #table.horizontalHeader().resizeColumnsToContents()
+        # Делаем заголовки столбцов жирными
+        font = QFont()
+        font.setBold(True)
+        table.horizontalHeader().setFont(font)
+
+        
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(lambda pos, t=table: self.table_context_menu(pos, t))
         
@@ -3166,7 +3441,7 @@ class MainWindow(QMainWindow):
         
         self.tab_widget.addTab(table, table_name)
         self.load_table_data(table_name, table)
-        print(f"Добавлена вкладка для таблицы {table_name}")
+        print(f"Added a tab for the table {table_name}")
 
     def load_table_data(self, table_name, table):
         query = f"SELECT * FROM {table_name}"
@@ -3178,26 +3453,26 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(str(data))
                 table.setItem(row_num, col_num, item)
             self.set_row_color(table, row_num)
-        print(f"Данные загружены в таблицу {table_name}")
+        print(f"The data is loaded into the table {table_name}")
 
     def set_row_color(self, table, row, color=None):
         if color is None:
             status_item = table.item(row, 5)
             if status_item is not None:
                 status_text = status_item.text()
-                if status_text == "Валид":
+                if status_text == "Valid":
                     color = QColor(130,250,130)
-                elif status_text == "Невалид":
+                elif status_text == "Invalid":
                     color = QColor(250,140,140)
-                elif status_text == "В работе":
+                elif status_text == "At work ...":
                     color = QColor(250,250,140)
                     color = None
                     
-                elif status_text == "Завершен":
+                elif status_text == "Completed":
                     color = QColor(220,220,250)
-                elif status_text == "Закончил парсинг":
+                elif status_text == "Finished parsing":
                     color = QColor(220,220,250)
-                elif status_text == "Закончил рассылку":
+                elif status_text == "Finished the mailing direct":
                     color = QColor(220,220,250)
                 else:
                     color = None
@@ -3215,14 +3490,14 @@ class MainWindow(QMainWindow):
             group_name, user_count, passed_users = row_data
             self.audience_table.setItem(row_num, 0, QTableWidgetItem(group_name))
             self.audience_table.setItem(row_num, 1, QTableWidgetItem(str(user_count)))
-            self.audience_table.setItem(row_num, 2, QTableWidgetItem(str(passed_users)))
-            self.audience_table.setItem(row_num, 3, QTableWidgetItem("2024-10-28"))
-        print("Данные загружены в таблицу аудитории")
+            self.audience_table.setItem(row_num, 2, QTableWidgetItem(str(passed_users)))            
+            #self.audience_table.setItem(row_num, 3, QTableWidgetItem("2024-10-28"))
+        print("The data is loaded into the table audience")
 
     def delete_table(self, index):
         table_name = self.tab_widget.tabText(index)
         menu = QMenu()
-        delete_action = QAction("Удалить вкладку?", self)
+        delete_action = QAction("Delete a tab?", self)
         delete_action.triggered.connect(lambda: self.confirm_delete_table(index, table_name))
         menu.addAction(delete_action)
         menu.exec_(self.tab_widget.mapToGlobal(self.tab_widget.tabBar().tabRect(index).center()))
@@ -3231,7 +3506,7 @@ class MainWindow(QMainWindow):
         self.cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.conn.commit()
         self.tab_widget.removeTab(index)
-        print(f"Таблица {table_name} удалена")
+        print(f"Table {table_name} delete")
 
     def load_tables(self):
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence' AND name != 'audience_users' AND name NOT LIKE 'proxygroup_%'")
@@ -3239,11 +3514,11 @@ class MainWindow(QMainWindow):
         for table_name in tables:
             if table_name[0] != "audience":
                 self.add_table_tab(table_name[0])
-        print("Все таблицы загружены при старте приложения")
+        print("All tables are loaded at the start of the application")
 
     def load_accounts(self):
         options = QFileDialog.Options()
-        filename, _ = QFileDialog.getOpenFileName(self, "Загрузить аккаунты", "", "Text Files (*.txt);;All Files (*)", options=options)
+        filename, _ = QFileDialog.getOpenFileName(self, "Upload accounts", "", "Text Files (*.txt);;All Files (*)", options=options)
         if filename:
             current_table = self.tab_widget.currentWidget()
             if current_table:
@@ -3311,7 +3586,7 @@ class MainWindow(QMainWindow):
             ]
             row_list = chunk
             for row in chunk:
-                table.setItem(row, 5, QTableWidgetItem("В работе"))
+                table.setItem(row, 5, QTableWidgetItem("At work ..."))
                 self.set_row_color(table, row, QColor(250,250,140))
                 self.set_row_color(table, row, None)
             p = multiprocessing.Process(target=process_function, args=(list(zip(login_list, row_list)), table_name, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, threads))
@@ -3320,7 +3595,7 @@ class MainWindow(QMainWindow):
 
         task_widget.processes = processes  # Associate processes with the task_widget
         self.monitor_validity_processes(processes, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, table_name, table, task_id)
-        print("Проверка валидности аккаунтов запущена")
+        print("Validation check аккаунтов запущена")
               
     def monitor_validity_processes(self, processes, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, table_name, table, task_name):
         def check_results(task_name):
@@ -3348,22 +3623,22 @@ class MainWindow(QMainWindow):
 
             while not result_queue.empty():
                 login, valid_status, row = result_queue.get()
-                print(f"Processing result: login={login}, valid_status={valid_status}, row={row}")
+                #print(f"Processing result: login={login}, valid_status={valid_status}, row={row}")
 
                 if row in processed_rows:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updates.append((valid_status, login))
                 table_updates.append((row, valid_status))
                 processed_rows.add(row)  # Mark row as processed
 
-                if valid_status == "Валид":
+                if valid_status == "Valid":
                     valid_count += 1
-                if valid_status == "Невалид":
+                if valid_status == "Invalid":
                     invalid_count += 1
 
-                print(f"Valid count: {valid_count}, Invalid count: {invalid_count}")
+                #print(f"Valid count: {valid_count}, Invalid count: {invalid_count}")
 
             if updates:
                 cursor.execute("BEGIN TRANSACTION")
@@ -3371,7 +3646,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET status = ? WHERE login = ?"
                     cursor.executemany(query, updates)
                     conn.commit()
-                    print(f"Database updated with {len(updates)} entries.")
+                    #print(f"Database updated with {len(updates)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()
@@ -3381,9 +3656,9 @@ class MainWindow(QMainWindow):
                     
             while not infoUA_queue.empty():
                 login, api_ua, row = infoUA_queue.get()
-                print(api_ua)
+                #print(api_ua)
                 if row in processed_rowsUA:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesUA.append((api_ua, login))
@@ -3396,14 +3671,14 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET api_ua = ? WHERE login = ?"
                     cursor.executemany(query, updatesUA)
                     conn.commit()
-                    print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
+                    #print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
                     
             while not infoDevice_queue.empty():
                 login, device, row = infoDevice_queue.get()
-                print(device)
+                #print(device)
                 if row in processed_rowsDevice:
                     print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
@@ -3418,7 +3693,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET device = ? WHERE login = ?"
                     cursor.executemany(query, updatesDevice)
                     conn.commit()
-                    print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
+                    #print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
@@ -3426,9 +3701,9 @@ class MainWindow(QMainWindow):
 
             while not infoCookie_queue.empty():
                 login, cookie, row = infoCookie_queue.get()
-                print(cookie)
+                #print(cookie)
                 if row in processed_rowsCookie:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesUA.append((cookie, login))
@@ -3441,7 +3716,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET cookie = ? WHERE login = ?"
                     cursor.executemany(query, updatesCookie)
                     conn.commit()
-                    print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
+                    #print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
@@ -3452,43 +3727,43 @@ class MainWindow(QMainWindow):
             conn.close()
             for row, cookie in table_updatesCookie:
                 table.setItem(row, 4, QTableWidgetItem(cookie))
-                print(f"Updated table row {row} with status {cookie}")
+                #print(f"Updated table row {row} with status {cookie}")
                 self.set_row_color(table, row, QColor(250,250,140))
                 
             for row, device in table_updatesDevice:
                 table.setItem(row, 2, QTableWidgetItem(device))
-                print(f"Updated table row {row} with status {device}")
+                #print(f"Updated table row {row} with status {device}")
                 self.set_row_color(table, row, QColor(250,250,140))
             
             for row, api_ua in table_updatesUA:
                 table.setItem(row, 3, QTableWidgetItem(api_ua))
-                print(f"Updated table row {row} with status {api_ua}")
+                #print(f"Updated table row {row} with status {api_ua}")
                 self.set_row_color(table, row, QColor(250,250,140))
 
             for row, valid_status in table_updates:
                 table.setItem(row, 5, QTableWidgetItem(valid_status))
                 self.set_row_color(table, row)
-                print(f"Updated table row {row} with status {valid_status}")
+                #print(f"Updated table row {row} with status {valid_status}")
 
             while not status_queue.empty():
                 row, status = status_queue.get()
                 table.setItem(row, 5, QTableWidgetItem(status))
                 self.set_row_color(table, row)
-                print(f"Updated status queue row {row} with status {status}")
+                #print(f"Updated status queue row {row} with status {status}")
         
 
             task_widget = self.tasks[task_name]
-            task_widget.update_status(valid_count, invalid_count, '', "В работе")  # Example usage
-            #print(f"Task widget updated: valid_count={valid_count}, invalid_count={invalid_count}, status='В работе'")
+            task_widget.update_status(valid_count, invalid_count, '', "At work ...")  # Example usage
+            #print(f"Task widget updated: valid_count={valid_count}, invalid_count={invalid_count}, status='At work ...'")
 
             for p in processes:
                 if p.is_alive():
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
 
-            task_widget.update_status(valid_count, invalid_count, '', "Завершен")
-            print(f"Task widget final update: valid_count={valid_count}, invalid_count={invalid_count}, status='Завершен'")
-            print("Проверка валидности аккаунтов завершена")
+            task_widget.update_status(valid_count, invalid_count, '', "Completed")
+            # print(f"Task widget final update: valid_count={valid_count}, invalid_count={invalid_count}, status='Completed'")
+            print("Validation check accounts completed")
 
         QTimer.singleShot(100, partial(check_results, task_name))    
         
@@ -3521,8 +3796,8 @@ class MainWindow(QMainWindow):
 
         listUsername_queue = multiprocessing.Queue()
         for usernameParsing in listUsername.split('\n'):
-            print('usernameParsing')
-            print(usernameParsing)
+            #print('usernameParsing')
+            #print(usernameParsing)
             listUsername_queue.put(usernameParsing)
             
             
@@ -3537,7 +3812,7 @@ class MainWindow(QMainWindow):
             ]
             row_list = chunk
             for row in chunk:
-                table.setItem(row, 5, QTableWidgetItem("В работе"))
+                table.setItem(row, 5, QTableWidgetItem("At work ..."))
                 self.set_row_color(table, row, QColor(250,250,140))
                 self.set_row_color(table, row, None)
             p = multiprocessing.Process(target=process_audience_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown, threads, listUsername_queue, limit_input))
@@ -3547,7 +3822,7 @@ class MainWindow(QMainWindow):
 
         task_widget.processes = processes  # Associate processes with the task_widget
         self.monitor_audience_processes(processes, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, table_name, table, task_id,group_name)
-        print("Парсинг аудитории запущен")
+        print("Audience parsing has been launched")
     
     def monitor_audience_processes(self, processes, result_queue, status_queue, infoUA_queue,infoCookie_queue,infoDevice_queue, table_name, table, task_name,group_name):
         def check_results(task_name):
@@ -3573,10 +3848,10 @@ class MainWindow(QMainWindow):
 
             while not result_queue.empty():
                 login, status_acc, user_ids, row = result_queue.get()
-                print('status_acc parsing: '+status_acc)
+                #print('status_acc parsing: '+status_acc)
                 if isinstance(user_ids, list):
                     if row in processed_rows:
-                        print(f"Row {row} already processed, skipping.")
+                        #print(f"Row {row} already processed, skipping.")
                         continue  # Skip already processed rows
 
                     user_count = len(user_ids)  # Подсчет количества пользователей
@@ -3585,7 +3860,7 @@ class MainWindow(QMainWindow):
 
                     collected_users += user_count
 
-                    print(f"User count: {collected_users}")
+                    #print(f"User count: {collected_users}")
 
                     # Сохранение пользователей пакетно
                     user_data = [(group_name, user_id, "Новый") for user_id in user_ids]
@@ -3595,16 +3870,16 @@ class MainWindow(QMainWindow):
                     conn.commit()
                 else:
                     if row in processed_rows:
-                        print(f"Row {row} already processed, skipping.")
+                        #print(f"Row {row} already processed, skipping.")
                         continue  # Skip already processed rows
                     table_updates.append((row, user_ids))
  
 
             while not infoUA_queue.empty():
                 login, api_ua, row = infoUA_queue.get()
-                print(api_ua)
+                # print(api_ua)
                 if row in processed_rowsUA:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesUA.append((api_ua, login))
@@ -3617,16 +3892,16 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET api_ua = ? WHERE login = ?"
                     cursor.executemany(query, updatesUA)
                     conn.commit()
-                    print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
+                    #print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
                     
             while not infoDevice_queue.empty():
                 login, device, row = infoDevice_queue.get()
-                print(device)
+                #print(device)
                 if row in processed_rowsDevice:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesDevice.append((device, login))
@@ -3639,7 +3914,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET device = ? WHERE login = ?"
                     cursor.executemany(query, updatesDevice)
                     conn.commit()
-                    print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
+                    #print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
@@ -3647,9 +3922,9 @@ class MainWindow(QMainWindow):
 
             while not infoCookie_queue.empty():
                 login, cookie, row = infoCookie_queue.get()
-                print(cookie)
+                #print(cookie)
                 if row in processed_rowsCookie:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesUA.append((cookie, login))
@@ -3662,7 +3937,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET cookie = ? WHERE login = ?"
                     cursor.executemany(query, updatesCookie)
                     conn.commit()
-                    print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
+                    #print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
@@ -3680,45 +3955,45 @@ class MainWindow(QMainWindow):
             
             for row, cookie in table_updatesCookie:
                 table.setItem(row, 4, QTableWidgetItem(cookie))
-                print(f"Updated table row {row} with status {cookie}")
+                #print(f"Updated table row {row} with status {cookie}")
                 self.set_row_color(table, row, QColor(250,250,140))
                 
             for row, device in table_updatesDevice:
                 table.setItem(row, 2, QTableWidgetItem(device))
-                print(f"Updated table row {row} with status {device}")
+                #print(f"Updated table row {row} with status {device}")
                 self.set_row_color(table, row, QColor(250,250,140))
             
             for row, api_ua in table_updatesUA:
                 table.setItem(row, 3, QTableWidgetItem(api_ua))
-                print(f"Updated table row {row} with status {api_ua}")
+                #print(f"Updated table row {row} with status {api_ua}")
                 self.set_row_color(table, row, QColor(250,250,140))
                 
             for row, user_count in table_updates:
-                print('ColorTableStatus: '+str(user_count))
-                if 'Закончил парсинг' in status_acc:
-                    table.setItem(row, 5, QTableWidgetItem('Закончил парсинг'))
+                #print('ColorTableStatus: '+str(user_count))
+                if 'Finished parsing' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Finished parsing'))
                     self.set_row_color(table, row)  
-                elif 'Невалид' in status_acc:
-                    table.setItem(row, 5, QTableWidgetItem('Невалид. Закончил парсинг'))
+                elif 'Invalid' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Invalid. Finished parsing'))
                     self.set_row_color(table, row, QColor(250,140,140))        
                     
                     
                 else:
-                    table.setItem(row, 5, QTableWidgetItem('Собрал: '+str(user_count)+' ...'))
+                    table.setItem(row, 5, QTableWidgetItem('Bring: '+str(user_count)+' ...'))
                     self.set_row_color(table, row, QColor(250,250,140))
 
             task_widget = self.tasks[task_name]
-            task_widget.update_status(0, 0, collected_users, "В работе")  # Обновление статуса с учетом количества пользователей
+            task_widget.update_status(0, 0, collected_users, "At work ...")  # Обновление Statusа с учетом количества пользователей
 
             for p in processes:
                 if p.is_alive():
                     QTimer.singleShot(100, partial(check_results, task_name))
                     return
-            task_widget.update_status(0, 0, collected_users, "Завершен")
+            task_widget.update_status(0, 0, collected_users, "Completed")
             #for row, user_count in table_updates:
-            #    table.setItem(row, 4, QTableWidgetItem('Парсинг завершен'))
+            #    table.setItem(row, 4, QTableWidgetItem('Парсинг Completed'))
             #    self.set_row_color(table, row)
-            print("Парсинг аудитории завершена")
+            print("Audience parsing is complete")
 
         QTimer.singleShot(100, partial(check_results, task_name))
 
@@ -3772,7 +4047,7 @@ class MainWindow(QMainWindow):
             ]
             row_list = chunk
             for row in chunk:
-                table.setItem(row, 5, QTableWidgetItem("В работе"))
+                table.setItem(row, 5, QTableWidgetItem("At work ..."))
                 self.set_row_color(table, row, QColor(250,250,140))
                 self.set_row_color(table, row, None)
             p = multiprocessing.Process(target=process_direct_function, args=(list(zip(login_list, row_list)), table_name, group_name, result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  proxy_group,proxy_method_dropdown,proxy_method_manual_dropdown,proxy_method_manual2_dropdown,direct_methodmessage_dropdown,direct_method_dropdown,limit_input_group,limit_input_group2, threads, listUserIdQueue, message_for_direct,limit_input_sleep, limit_input))
@@ -3782,7 +4057,7 @@ class MainWindow(QMainWindow):
 
         task_widget.processes = processes  # Associate processes with the task_widget
         self.monitor_direct_processes(processes,  result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  table_name, table, task_id,group_name)
-        print("Рассылка запущена")
+        print("The mail direct has been launched")
     
     def monitor_direct_processes(self, processes,  result_queue,infoUA_queue,infoCookie_queue,infoDevice_queue,  table_name, table, task_name,group_name):
         def check_results(task_name):
@@ -3810,17 +4085,17 @@ class MainWindow(QMainWindow):
 
             while not result_queue.empty():
                 login, status_acc, user_ids, row = result_queue.get()
-                print(login)
-                print(status_acc)
+                #print(login)
+                #print(status_acc)
 
   
                 if row in processed_rows:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
             
                 
                 
-                if status_acc == "Невалид" or status_acc == "Спам-блок":
+                if status_acc == "Invalid" or status_acc == "Spam block" or status_acc == "The limit has been reached" or status_acc == "Finished the mailing direct" or status_acc == "The session is invalid":
                     table_updates.append((row, user_ids))
 
                 else:
@@ -3833,7 +4108,7 @@ class MainWindow(QMainWindow):
 
                     for user_id in user_ids:
                         cursor.execute("UPDATE audience_users SET status = 'Пройден' WHERE user_id = ?", (user_id,))
-                    print('table_name: '+table_name)    
+                    #print('table_name: '+table_name)    
                     cursor.execute("UPDATE "+table_name+" SET messages_sent = messages_sent + ? WHERE login = ?", (user_count, login,))
                     self.update_audiencefordirect_table((group_name, user_count, row, table_name))
 
@@ -3842,16 +4117,16 @@ class MainWindow(QMainWindow):
                     result = cursor.fetchone()
                     if result:
                         messages_sent = result[0]
-                        print('messages_sent'+str(messages_sent))
+                       # print('messages_sent'+str(messages_sent))
                         messages_sent = str(messages_sent)
                     else:
                         messages_sent = 'error'
             
             while not infoUA_queue.empty():
                 login, api_ua, row = infoUA_queue.get()
-                print(api_ua)
+                #print(api_ua)
                 if row in processed_rowsUA:
-                    print(f"Row {row} already processed, skipping.")
+                   #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesUA.append((api_ua, login))
@@ -3864,16 +4139,16 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET api_ua = ? WHERE login = ?"
                     cursor.executemany(query, updatesUA)
                     conn.commit()
-                    print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
+                    #print(f"Обновил юзер агент  {str(updatesUA)} {len(updatesUA)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
                     
             while not infoDevice_queue.empty():
                 login, device, row = infoDevice_queue.get()
-                print(device)
+                #print(device)
                 if row in processed_rowsDevice:
-                    print(f"Row {row} already processed, skipping.")
+                   # print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesDevice.append((device, login))
@@ -3886,7 +4161,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET device = ? WHERE login = ?"
                     cursor.executemany(query, updatesDevice)
                     conn.commit()
-                    print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
+                    #print(f"Обновил девайс  {str(updatesDevice)} {len(updatesDevice)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
@@ -3894,9 +4169,9 @@ class MainWindow(QMainWindow):
 
             while not infoCookie_queue.empty():
                 login, cookie, row = infoCookie_queue.get()
-                print(cookie)
+                #print(cookie)
                 if row in processed_rowsCookie:
-                    print(f"Row {row} already processed, skipping.")
+                    #print(f"Row {row} already processed, skipping.")
                     continue  # Skip already processed rows
 
                 updatesUA.append((cookie, login))
@@ -3909,7 +4184,7 @@ class MainWindow(QMainWindow):
                     query = f"UPDATE {table_name} SET cookie = ? WHERE login = ?"
                     cursor.executemany(query, updatesCookie)
                     conn.commit()
-                    print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
+                    #print(f"Обновил cookie  {str(updatesCookie)} {len(updatesCookie)} entries.")
                 except sqlite3.OperationalError as e:
                     print(f"Database error: {str(e)}")
                     conn.rollback()       
@@ -3928,17 +4203,17 @@ class MainWindow(QMainWindow):
 
             for row, cookie in table_updatesCookie:
                 table.setItem(row, 4, QTableWidgetItem(cookie))
-                print(f"Updated table row {row} with status {cookie}")
+                #print(f"Updated table row {row} with status {cookie}")
                 self.set_row_color(table, row, QColor(250,250,140))
                 
             for row, device in table_updatesDevice:
                 table.setItem(row, 2, QTableWidgetItem(device))
-                print(f"Updated table row {row} with status {device}")
+                #print(f"Updated table row {row} with status {device}")
                 self.set_row_color(table, row, QColor(250,250,140))
             
             for row, api_ua in table_updatesUA:
                 table.setItem(row, 3, QTableWidgetItem(api_ua))
-                print(f"Updated table row {row} with status {api_ua}")
+                #print(f"Updated table row {row} with status {api_ua}")
                 self.set_row_color(table, row, QColor(250,250,140))
 
 
@@ -3946,64 +4221,66 @@ class MainWindow(QMainWindow):
                     
                     
             for row, user_count in table_updates:
-                print('ColorTableStatus1: '+str(user_count))
-                if 'Закончил рассылку' in status_acc:
-                    table.setItem(row, 5, QTableWidgetItem('Закончил рассылку'))
-                    table.setItem(row, 6, QTableWidgetItem(messages_sent))
+                #print('ColorTableStatus1: '+str(user_count))
+                if 'Finished the mailing direct' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('The audience is over. Finished the mailing direct'))
                     self.set_row_color(table, row) 
-                elif 'Невалид' in status_acc:
-                    table.setItem(row, 5, QTableWidgetItem('Невалид. Закончил рассылку'))
+                elif 'Invalid' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Invalid. Finished the mailing direct'))
                     self.set_row_color(table, row, QColor(250,140,140)) 
-                elif 'Спам-блок' in status_acc:
-                    table.setItem(row, 5, QTableWidgetItem('Спам-блок. Закончил рассылку'))
-                    self.set_row_color(table, row, QColor(140,140,140))                  
+                elif 'Spam block' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('Spam block. Finished the mailing direct'))
+                    self.set_row_color(table, row, QColor(140,140,140))  
+                elif 'The session is invalid' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('The session is invalid. Finished the mailing direct'))
+                    self.set_row_color(table, row, QColor(140,140,140))                
                     
+                    
+                elif 'The limit has been reached' in status_acc:
+                    table.setItem(row, 5, QTableWidgetItem('The limit has been reached. Finished the mailing direct'))
+                    self.set_row_color(table, row, QColor(0,160,120))              
                     
                     
                 else:
-                    table.setItem(row, 5, QTableWidgetItem('Отправил: '+str(user_count)+' сообщений'))
+                    table.setItem(row, 5, QTableWidgetItem('Good sent: '+str(user_count)+' message'))
 
                     table.setItem(row, 6, QTableWidgetItem(messages_sent))
                     self.set_row_color(table, row, QColor(250,250,140))
-            #print('test1')
             task_widget = self.tasks[task_name]
-            #print('test2')
 
-            task_widget.update_status(0, 0, messages_sentAll, "В работе")  # Обновление статуса с учетом количества пользователей
-            #print('test3')
+            task_widget.update_status(0, 0, messages_sentAll, "At work ...")  # Обновление Statusа с учетом количества пользователей
             try:
                 for p in processes:
                     
                     if p.is_alive():
                         QTimer.singleShot(100, partial(check_results, task_name))
                         return
-                #print('test4')
             except:
-                print('VAIOSJDn DOSAJ')
-            task_widget.update_status(0, 0, messages_sentAll, "Завершен")
+                none = ''
+            task_widget.update_status(0, 0, messages_sentAll, "Completed")
 
-            print("Рассылка завершена")
+            print("The mail direct is completed")
 
         QTimer.singleShot(100, partial(check_results, task_name))
 
     def update_audiencefordirect_table(self, result):
         group_name, user_count, row, table_name = result
-        print('1update_audiencefordirect_table ['+group_name+']')
+       # print('1update_audiencefordirect_table ['+group_name+']')
         # Проверить, существует ли группа уже в таблице
         rows = self.audience_table.rowCount()
         group_row = -1
         for row in range(rows):
-            print('self.audience_table.item(row, 0).text(): '+self.audience_table.item(row, 0).text()+'')
+            #print('self.audience_table.item(row, 0).text(): '+self.audience_table.item(row, 0).text()+'')
             if self.audience_table.item(row, 0).text() == group_name:
                 group_row = row
                 break
                 
                 
-        print('2update_audiencefordirect_table')
+        #print('2update_audiencefordirect_table')
 
         current_count = int(self.audience_table.item(group_row, 2).text())
         new_count = current_count + user_count
-        print('new_count:'+str(new_count))
+        #print('new_count:'+str(new_count))
         self.audience_table.setItem(group_row, 2, QTableWidgetItem(str(new_count)))
             
         print(f"Updated group {group_name} with {user_count} ready users")
@@ -4029,7 +4306,7 @@ class MainWindow(QMainWindow):
             self.audience_table.setItem(group_row, 0, QTableWidgetItem(group_name))
             self.audience_table.setItem(group_row, 1, QTableWidgetItem(str(user_count)))
             self.audience_table.setItem(group_row, 2, QTableWidgetItem("0"))
-            self.audience_table.setItem(group_row, 3, QTableWidgetItem("2024-10-28"))
+            #self.audience_table.setItem(group_row, 3, QTableWidgetItem("2024-10-28"))
         else:
             # Обновить существующую группу
             current_count = int(self.audience_table.item(group_row, 1).text())
@@ -4042,17 +4319,17 @@ class MainWindow(QMainWindow):
     
     def table_context_menu(self, pos, table):
         menu = QMenu()
-        delete_action = QAction("Удалить выбранные строки", self)
+        delete_action = QAction("Delete selected lines", self)
         delete_action.triggered.connect(lambda: self.delete_selected_rows(table))
         menu.addAction(delete_action)
-        delete_action = QAction("Удалить все невалидные аккаунты", self)
+        delete_action = QAction("Delete all invalid accounts", self)
         delete_action.triggered.connect(lambda: self.delete_invalid_accounts(table))
         menu.addAction(delete_action)
         menu.exec_(table.viewport().mapToGlobal(pos))
     
     def delete_invalid_accounts(self,table):
         table_name = self.tab_widget.tabText(self.tab_widget.indexOf(table))
-        query = "DELETE FROM "+table_name+" WHERE status='Невалид'"
+        query = "DELETE FROM "+table_name+" WHERE status='Invalid'"
         self.cursor.execute(query)
         self.conn.commit()
         print("Deleted invalid accounts from database")
@@ -4063,8 +4340,8 @@ class MainWindow(QMainWindow):
         rows = table.rowCount()
         for row in range(rows - 1, -1, -1):
             status = table.item(row, 5).text()
-            print(status)
-            if status == "Невалид":
+            #print(status)
+            if status == "Invalid":
                 table.removeRow(row)
         
         # Включение сигналов обновления таблицы
@@ -4082,14 +4359,14 @@ class MainWindow(QMainWindow):
         if not selected_rows:
             return
         
-        print("Собрано выделенных строк:", len(selected_rows))
+        #print("Собрано выделенных строк:", len(selected_rows))
         
         logins = [table.item(row, 0).text() for row in selected_rows]
         
         if not logins:
             return
         
-        print("Собрано логинов:", len(logins))
+       # print("Собрано логинов:", len(logins))
 
         # Пакетное удаление из базы данных в одной транзакции с использованием оператора IN
         placeholders = ','.join('?' * len(logins))
@@ -4098,9 +4375,9 @@ class MainWindow(QMainWindow):
             self.conn.execute("BEGIN TRANSACTION")
             self.cursor.execute(query, logins)
             self.conn.commit()
-            print("Удаление из базы данных завершено")
+            print("Deletion from the database is complete")
         except sqlite3.Error as e:
-            print(f"Ошибка при удалении строк из базы данных: {e}")
+            print(f"Error deleting rows from the database: {e}")
             self.conn.rollback()
             return
 
@@ -4110,12 +4387,12 @@ class MainWindow(QMainWindow):
         # Удаление строк из таблицы
         for index, row in enumerate(sorted(selected_rows, reverse=True)):
             table.removeRow(row)
-            print(f"Удалена строка {index + 1} из {len(selected_rows)}")
+            #print(f"The line was deleted {index + 1} in {len(selected_rows)}")
         
         # Включение сигналов обновления таблицы
         table.blockSignals(False)
         
-        print("Выбранные строки удалены")
+        #print("Выбранные строки удалены")
 
 class LicenseDialog(QDialog):
     def __init__(self):
@@ -4142,26 +4419,114 @@ class LicenseDialog(QDialog):
     
 
 
+class LicenseChecker(QObject):
+    invalid_license_signal = pyqtSignal()
+
+    def __init__(self, license_data):
+        super().__init__()
+        self.license_data = license_data
+
+    def check_license_periodically(self):
+        while True:
+            result = validate_license(self.license_data['license_key'])
+            #print(result)
+            if result['status'] == "invalid":
+                self.invalid_license_signal.emit()
+                break
+            time.sleep(60)
+
+def show_error_and_exit():
+    QMessageBox.critical(None, 'Error', 'License expired or invalid.')
+    QTimer.singleShot(0, lambda: sys.exit(1))
+
+
+
+
+def get_current_version():
+    version_file = 'version.json'
+    if not os.path.exists(version_file):
+        return {"version": "0.0.0"}
+    with open(version_file, 'r') as file:
+        return json.load(file)
+
+def get_server_version():
+    try:
+        response = requests.get("http://37.230.116.31/admin_panel/version.json")
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print(f"Failed to check for updates: {e}")
+        return None
+
+def download_update(server_version):
+    try:
+        response = requests.get("http://37.230.116.31/admin_panel/app.py", stream=True)
+        response.raise_for_status()
+        with open('app.py', 'wb') as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
+                
+        response = requests.get("http://37.230.116.31/admin_panel/enscrypt.py", stream=True)
+        response.raise_for_status()
+        with open('enscrypt.py', 'wb') as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
+                
+        # Update the version file
+        with open('version.json', 'w') as version_file:
+            json.dump(server_version, version_file, indent=4)            
+                
+        return True
+    except requests.RequestException as e:
+        print(f"Failed to download update: {e}")
+        return False
+
+class UpdateChecker(QObject):
+    update_available_signal = pyqtSignal(dict)
+
+    def __init__(self):
+        super().__init__()
+
+    def check_for_updates_periodically(self):
+        while True:
+            server_version = get_server_version()
+            if server_version:
+                local_version = get_current_version()
+                if server_version['version'] != local_version['version']:
+                    self.update_available_signal.emit(server_version)
+            time.sleep(600)
 
 
 
 def main():
-    app = QApplication(sys.argv)
 
     license_data = read_license()
-    if not license_data or license_data['expiration_time'] < time.time():
+    if not license_data:
         license_data = prompt_license()
 
     if __name__ == '__main__':
+        app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
-        sys.exit(app.exec_())    
-    while True:
-        result = validate_license(license_data['license_key'])
-        if not result['valid']:
-            QMessageBox.critical(None, 'Error', 'License expired or invalid.')
-            sys.exit(1)
-        time.sleep(60)
+      
+    license_checker = LicenseChecker(license_data)
+    license_checker.invalid_license_signal.connect(show_error_and_exit)
 
+    # Запуск потока для периодической проверки лицензии
+    license_thread = threading.Thread(target=license_checker.check_license_periodically)
+    license_thread.daemon = True
+    license_thread.start()
+    
+    update_checker = UpdateChecker()
+    update_checker.update_available_signal.connect(window.show_update_dialog)
+
+    # Запуск потока для периодической проверки обновлений
+    update_thread = threading.Thread(target=update_checker.check_for_updates_periodically)
+    update_thread.daemon = True
+    update_thread.start()
+
+
+
+    sys.exit(app.exec_())
 if __name__ == '__main__':
     main()
